@@ -1,0 +1,111 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    String    @id @default(cuid())
+  email                 String    @unique
+  name                  String
+  password              String
+  role                  UserRole  @default(user)
+  address               String
+  credits               Int       @default(0)
+  documentationFrontUrl String?
+  documentationBackUrl  String?
+  number                String
+  avatar                String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  deletedAt             DateTime?
+
+  // Relations
+  trips                 Trip[]
+  payments              Payment[]
+  charterTrips          Trip[]    @relation("CharterTrips")
+
+  @@map("users")
+}
+
+model Trip {
+  id         String   @id @default(cuid())
+  userId     String
+  charterId  String
+  tripTo     String
+  latitude   String
+  longitude  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id])
+  charter   User     @relation("CharterTrips", fields: [charterId], references: [id])
+
+  @@map("trips")
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  userId    String
+  credits   Int
+  amount    Float
+  status    PaymentStatus @default(pending)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  user     User          @relation(fields: [userId], references: [id])
+
+  @@map("payments")
+}
+
+model SystemConfig {
+  id                String   @id @default(cuid())
+  key               String   @unique
+  value             String
+  description       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("system_configs")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  entityType  String
+  entityId    String
+  action      String
+  oldValues   Json?
+  newValues   Json?
+  ipAddress   String?
+  location    String?
+  userId      String?
+  createdAt   DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+enum UserRole {
+  admin
+  subadmin
+  user
+  charter
+}
+
+enum PaymentStatus {
+  pending
+  rejected
+  accepted
+}
