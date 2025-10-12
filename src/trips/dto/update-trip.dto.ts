@@ -1,9 +1,9 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsInt, Min, Max, IsDateString } from 'class-validator';
 
 export class UpdateTripDto {
   @IsOptional()
   @IsString()
-  tripTo?: string;
+  address?: string;
 
   @IsOptional()
   @IsString()
@@ -12,4 +12,14 @@ export class UpdateTripDto {
   @IsOptional()
   @IsString()
   longitude?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  workersCount?: number;
+
+  @IsOptional()
+  @IsDateString()
+  scheduledDate?: string;
 } 

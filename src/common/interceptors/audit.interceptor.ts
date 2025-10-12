@@ -10,12 +10,14 @@ import { tap } from 'rxjs/operators';
 import { Reflector } from '@nestjs/core';
 import { AUDITORY_KEY } from '../decorators/auditory.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GeolocationService } from '../services/geolocation.service';
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   constructor(
     private reflector: Reflector,
     @Inject(PrismaService) private prisma: PrismaService,
+    private geolocationService: GeolocationService,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
@@ -30,8 +32,9 @@ export class AuditInterceptor implements NestInterceptor {
 
     const request = context.switchToHttp().getRequest();
     const { method, url, body, params, query, user } = request;
-    const ipAddress = this.getIpAddress(request);
-    const location = this.getLocation(request);
+    const locationInfo = this.geolocationService.getLocationFromRequest(request);
+    const ipAddress = locationInfo.ip;
+    const location = locationInfo.formatted;
 
     return next.handle().pipe(
       tap(async (response) => {
@@ -53,21 +56,6 @@ export class AuditInterceptor implements NestInterceptor {
     );
   }
 
-  private getIpAddress(request: any): string {
-    return (
-      request.headers['x-forwarded-for'] ||
-      request.connection.remoteAddress ||
-      request.socket.remoteAddress ||
-      request.ip ||
-      'unknown'
-    );
-  }
-
-  private getLocation(request: any): string {
-    // In a real application, you would use a geolocation service
-    // For now, we'll return a placeholder
-    return 'Buenos Aires, Argentina';
-  }
 
   private getEntityId(method: string, params: any, body: any, response: any): string {
     if (method === 'POST' && response?.id) {

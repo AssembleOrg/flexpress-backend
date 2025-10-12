@@ -1,14 +1,51 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
+import * as morgan from 'morgan';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
+  const logger = new Logger('Bootstrap');
 
   app.setGlobalPrefix('api/v1');
+
+  // Security middleware - Helmet adds various HTTP headers for security
+  app.use(helmet({
+    contentSecurityPolicy: false, // Disable CSP for Swagger UI
+    crossOriginEmbedderPolicy: false,
+  }));
+
+  // Trust proxy - needed to get real IP behind reverse proxy/load balancer
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.set('trust proxy', 1);
+
+  // HTTP request logger with detailed information
+  // Custom Morgan token to extract real IP
+  morgan.token('real-ip', (req: any) => {
+    return req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+           req.headers['x-real-ip'] ||
+           req.headers['cf-connecting-ip'] ||
+           req.connection?.remoteAddress ||
+           req.ip ||
+           'unknown';
+  });
+
+  // Morgan logging format with IP and detailed info
+  const morganFormat = configService.get<string>('NODE_ENV') === 'production'
+    ? ':real-ip - :method :url :status :res[content-length] - :response-time ms'
+    : ':real-ip - :method :url :status :res[content-length] - :response-time ms - :user-agent';
+
+  app.use(morgan(morganFormat, {
+    stream: {
+      write: (message: string) => {
+        logger.log(message.trim());
+      },
+    },
+  }));
 
   // Enable CORS
   // app.enableCors();
@@ -53,10 +90,10 @@ async function bootstrap() {
   const port = configService.get<number>('port') || 3000;
   await app.listen(port);
   
-  console.log(`🚀 Application is running on: http://localhost:${port}/api/v1`);
-  // if (isDevelopment) {
-    console.log(`📚 Swagger documentation available at: http://localhost:${port}/api/v1/api-docs`);
-  // }
+  logger.log(`🚀 Application is running on: http://localhost:${port}/api/v1`);
+  logger.log(`📚 Swagger documentation available at: http://localhost:${port}/api/v1/api-docs`);
+  logger.log(`🔒 Security features enabled: Helmet, IP tracking, Geolocation`);
+  logger.log(`📊 Request logging enabled with IP and location tracking`);
 }
 
 function isValidBasicAuth(authHeader: string, username: string, password: string): boolean {

@@ -42,4 +42,16 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   avatar?: string;
+
+  @IsOptional()
+  @IsString()
+  originAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  originLatitude?: string;
+
+  @IsOptional()
+  @IsString()
+  originLongitude?: string;
 } 
