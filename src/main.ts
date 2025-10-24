@@ -10,6 +10,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
+  
 
   app.setGlobalPrefix('api/v1');
 
@@ -47,8 +48,15 @@ async function bootstrap() {
     },
   }));
 
-  // Enable CORS
-  // app.enableCors();
+  app.enableCors({
+    origin: [
+      'http://localhost:3000', // Backend port
+      'http://localhost:3001', // Alternative backend port
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  });
 
   // Global validation pipe
   app.useGlobalPipes(new ValidationPipe({
