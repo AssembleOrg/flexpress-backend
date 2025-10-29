@@ -50,6 +50,7 @@ async function bootstrap() {
 
   app.enableCors({
     origin: [
+      'https://flexpress-front.vercel.app', 
       'http://localhost:3000', // Backend port
       'http://localhost:3001', // Alternative backend port
     ],
