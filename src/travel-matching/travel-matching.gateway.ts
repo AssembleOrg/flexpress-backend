@@ -1,5 +1,4 @@
 import {
-  WebSocketGateway,
   WebSocketServer,
   SubscribeMessage,
   MessageBody,
@@ -9,6 +8,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
+import { WebSocketGateway } from '@nestjs/websockets';
 
 interface ConversationRoom {
   conversationId: string;
@@ -18,13 +18,11 @@ interface ConversationRoom {
 }
 
 @WebSocketGateway({
-  cors: {
-    origin: '*', // Configure this properly in production
-  },
   namespace: '/conversations',
 })
 export class TravelMatchingGateway
-  implements OnGatewayConnection, OnGatewayDisconnect {
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   server: Server;
 
@@ -38,7 +36,7 @@ export class TravelMatchingGateway
 
   handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
-    
+
     // Remove from all rooms
     this.rooms.forEach((room, conversationId) => {
       room.sockets.delete(client.id);
@@ -59,7 +57,8 @@ export class TravelMatchingGateway
   @SubscribeMessage('join-conversation')
   handleJoinConversation(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string; userId: string; charterId?: string }
+    @MessageBody()
+    data: { conversationId: string; userId: string; charterId?: string },
   ) {
     const { conversationId, userId, charterId } = data;
 
@@ -99,7 +98,7 @@ export class TravelMatchingGateway
   @SubscribeMessage('leave-conversation')
   handleLeaveConversation(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string; userId: string }
+    @MessageBody() data: { conversationId: string; userId: string },
   ) {
     const { conversationId, userId } = data;
 
@@ -122,7 +121,9 @@ export class TravelMatchingGateway
       }
     }
 
-    this.logger.log(`Usuario ${userId} salió de conversación ${conversationId}`);
+    this.logger.log(
+      `Usuario ${userId} salió de conversación ${conversationId}`,
+    );
 
     // Notify others
     client.to(`conversation:${conversationId}`).emit('user-left', {
@@ -136,12 +137,13 @@ export class TravelMatchingGateway
   @SubscribeMessage('send-message')
   handleMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       conversationId: string;
       userId: string;
       message: string;
       userName: string;
-    }
+    },
   ) {
     const { conversationId, userId, message, userName } = data;
 
@@ -162,12 +164,13 @@ export class TravelMatchingGateway
   @SubscribeMessage('typing')
   handleTyping(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       conversationId: string;
       userId: string;
       userName: string;
       isTyping: boolean;
-    }
+    },
   ) {
     const { conversationId, userId, userName, isTyping } = data;
 
@@ -186,11 +189,13 @@ export class TravelMatchingGateway
    * Notify conversation closed
    */
   notifyConversationClosed(conversationId: string, closedBy: string) {
-    this.server.to(`conversation:${conversationId}`).emit('conversation-closed', {
-      conversationId,
-      closedBy,
-      timestamp: new Date().toISOString(),
-    });
+    this.server
+      .to(`conversation:${conversationId}`)
+      .emit('conversation-closed', {
+        conversationId,
+        closedBy,
+        timestamp: new Date().toISOString(),
+      });
   }
 
   /**
@@ -199,7 +204,7 @@ export class TravelMatchingGateway
   notifyNewConversation(userId: string, conversationData: any) {
     const sockets = this.userSockets.get(userId);
     if (sockets) {
-      sockets.forEach(socketId => {
+      sockets.forEach((socketId) => {
         this.server.to(socketId).emit('new-conversation', {
           conversation: conversationData,
           timestamp: new Date().toISOString(),
@@ -212,11 +217,31 @@ export class TravelMatchingGateway
    * Notify users about conversation expiration
    */
   notifyConversationExpired(conversationId: string) {
-    this.server.to(`conversation:${conversationId}`).emit('conversation-expired', {
-      conversationId,
-      message: 'La conversación ha expirado después de 5 horas',
-      timestamp: new Date().toISOString(),
-    });
+    this.server
+      .to(`conversation:${conversationId}`)
+      .emit('conversation-expired', {
+        conversationId,
+        message: 'La conversación ha expirado después de 5 horas',
+        timestamp: new Date().toISOString(),
+      });
+  }
+  public notifyMatchUpdate(
+    userId: string,
+    matchData: { matchId: string; status: string },
+  ) {
+    const userSocketIds = this.userSockets.get(userId);
+
+    if (userSocketIds && userSocketIds.size > 0) {
+      userSocketIds.forEach((socketId) => {
+        this.server.to(socketId).emit('match:updated', matchData);
+        this.logger.log(
+          `Notificando a usuario ${userId} (socket ${socketId}) sobre actualización de match ${matchData.matchId} a estado ${matchData.status}`,
+        );
+      });
+    } else {
+      this.logger.warn(
+        `No se encontró socket activo para el usuario ${userId} para notificar sobre el match ${matchData.matchId}`,
+      );
+    }
   }
 }
-

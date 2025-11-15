@@ -9,7 +9,13 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TravelMatchingService } from './travel-matching.service';
 import {
@@ -17,8 +23,9 @@ import {
   SelectCharterDto,
   ToggleAvailabilityDto,
   UpdateCharterOriginDto,
+  RespondToMatchDto,
 } from './dto';
-import { Auditory } from '../common/decorators/auditory.decorator';
+// import { Auditory } from '../common/decorators/auditory.decorator';
 
 @ApiTags('Travel Matching')
 @ApiBearerAuth()
@@ -28,7 +35,7 @@ export class TravelMatchingController {
   constructor(private readonly matchingService: TravelMatchingService) {}
 
   @Post('matches')
-  @Auditory('TravelMatch')
+  // @Auditory('TravelMatch')
   @ApiOperation({ summary: 'Create a new travel match request' })
   @ApiResponse({ status: 201, description: 'Match created successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
@@ -53,20 +60,20 @@ export class TravelMatchingController {
   }
 
   @Put('matches/:id/select-charter')
-  @Auditory('TravelMatch')
+  // @Auditory('TravelMatch')
   @ApiOperation({ summary: 'Select a charter for the match' })
   @ApiResponse({ status: 200, description: 'Charter selected successfully' })
   @ApiResponse({ status: 404, description: 'Match not found' })
   async selectCharter(
     @Request() req: any,
     @Param('id') id: string,
-    @Body() dto: SelectCharterDto
+    @Body() dto: SelectCharterDto,
   ) {
     return this.matchingService.selectCharter(req.user.id, id, dto);
   }
 
   @Put('matches/:id/cancel')
-  @Auditory('TravelMatch')
+  // @Auditory('TravelMatch')
   @ApiOperation({ summary: 'Cancel a match' })
   @ApiResponse({ status: 200, description: 'Match cancelled successfully' })
   @ApiResponse({ status: 404, description: 'Match not found' })
@@ -75,7 +82,7 @@ export class TravelMatchingController {
   }
 
   @Post('matches/:id/create-trip')
-  @Auditory('Trip')
+  // @Auditory('Trip')
   @ApiOperation({ summary: 'Create trip from accepted match' })
   @ApiResponse({ status: 201, description: 'Trip created successfully' })
   @ApiResponse({ status: 400, description: 'Cannot create trip' })
@@ -87,28 +94,33 @@ export class TravelMatchingController {
   @ApiOperation({ summary: 'Get charter match requests' })
   @ApiQuery({ name: 'status', required: false })
   @ApiResponse({ status: 200, description: 'Match requests retrieved' })
-  async getCharterMatches(@Request() req: any, @Query('status') status?: string) {
+  async getCharterMatches(
+    @Request() req: any,
+    @Query('status') status?: string,
+  ) {
     return this.matchingService.getCharterMatches(req.user.id, status);
   }
 
   @Put('charter/matches/:id/respond')
-  @Auditory('TravelMatch')
+  // @Auditory('TravelMatch')
   @ApiOperation({ summary: 'Charter responds to match request' })
   @ApiResponse({ status: 200, description: 'Response recorded successfully' })
   async respondToMatch(
     @Request() req: any,
     @Param('id') id: string,
-    @Query('accept') accept: string
+    @Body() dto: RespondToMatchDto,
   ) {
-    const acceptBool = accept === 'true';
-    return this.matchingService.respondToMatch(req.user.id, id, acceptBool);
+    return this.matchingService.respondToMatch(req.user.id, id, dto.accept);
   }
 
   @Put('charter/availability')
-  @Auditory('CharterAvailability')
+  // @Auditory('CharterAvailability')
   @ApiOperation({ summary: 'Toggle charter availability' })
   @ApiResponse({ status: 200, description: 'Availability updated' })
-  async toggleAvailability(@Request() req: any, @Body() dto: ToggleAvailabilityDto) {
+  async toggleAvailability(
+    @Request() req: any,
+    @Body() dto: ToggleAvailabilityDto,
+  ) {
     return this.matchingService.toggleAvailability(req.user.id, dto);
   }
 
@@ -120,11 +132,13 @@ export class TravelMatchingController {
   }
 
   @Put('charter/origin')
-  @Auditory('User')
+  // @Auditory('User')
   @ApiOperation({ summary: 'Update charter origin location' })
   @ApiResponse({ status: 200, description: 'Origin location updated' })
-  async updateCharterOrigin(@Request() req: any, @Body() dto: UpdateCharterOriginDto) {
+  async updateCharterOrigin(
+    @Request() req: any,
+    @Body() dto: UpdateCharterOriginDto,
+  ) {
     return this.matchingService.updateCharterOrigin(req.user.id, dto);
   }
 }
-

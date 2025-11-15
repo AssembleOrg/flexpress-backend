@@ -32,7 +32,8 @@ export class AuditInterceptor implements NestInterceptor {
 
     const request = context.switchToHttp().getRequest();
     const { method, url, body, params, query, user } = request;
-    const locationInfo = this.geolocationService.getLocationFromRequest(request);
+    const locationInfo =
+      this.geolocationService.getLocationFromRequest(request);
     const ipAddress = locationInfo.ip;
     const location = locationInfo.formatted;
 
@@ -43,8 +44,14 @@ export class AuditInterceptor implements NestInterceptor {
             entityType,
             entityId: this.getEntityId(method, params, body, response),
             action: method,
-            oldValues: method === 'PUT' || method === 'PATCH' ? this.getOldValues(request) : null,
-            newValues: method === 'POST' || method === 'PUT' || method === 'PATCH' ? body : null,
+            oldValues:
+              method === 'PUT' || method === 'PATCH'
+                ? this.getOldValues(request)
+                : null,
+            newValues:
+              method === 'POST' || method === 'PUT' || method === 'PATCH'
+                ? body
+                : null,
             ipAddress,
             location,
             userId: user?.id,
@@ -56,8 +63,12 @@ export class AuditInterceptor implements NestInterceptor {
     );
   }
 
-
-  private getEntityId(method: string, params: any, body: any, response: any): string {
+  private getEntityId(
+    method: string,
+    params: any,
+    body: any,
+    response: any,
+  ): string {
     if (method === 'POST' && response?.id) {
       return response.id;
     }
@@ -88,12 +99,16 @@ export class AuditInterceptor implements NestInterceptor {
         entityType: auditData.entityType,
         entityId: auditData.entityId,
         action: auditData.action,
-        oldValues: auditData.oldValues ? JSON.stringify(auditData.oldValues) : undefined,
-        newValues: auditData.newValues ? JSON.stringify(auditData.newValues) : undefined,
+        oldValues: auditData.oldValues
+          ? JSON.stringify(auditData.oldValues)
+          : undefined,
+        newValues: auditData.newValues
+          ? JSON.stringify(auditData.newValues)
+          : undefined,
         ipAddress: auditData.ipAddress,
         location: auditData.location,
         userId: auditData.userId,
       },
     });
   }
-} 
+}

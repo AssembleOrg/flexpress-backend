@@ -1,14 +1,27 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { SendMessageDto } from './dto';
 import { addHours, nowInBuenosAires } from '../common/utils/date.util';
+import { TravelMatchingGateway } from '../travel-matching/travel-matching.gateway';
 
 @Injectable()
 export class ConversationsService {
   private readonly logger = new Logger(ConversationsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Inject(forwardRef(() => TravelMatchingGateway))
+    private gateway: TravelMatchingGateway,
+  ) {}
 
   /**
    * Create a conversation when match is accepted
@@ -23,7 +36,9 @@ export class ConversationsService {
     }
 
     if (match.status !== 'accepted') {
-      throw new BadRequestException('La búsqueda debe estar aceptada para abrir conversación');
+      throw new BadRequestException(
+        'La búsqueda debe estar aceptada para abrir conversación',
+      );
     }
 
     if (!match.charterId) {
@@ -70,7 +85,9 @@ export class ConversationsService {
       },
     });
 
-    this.logger.log(`Conversación creada: ${conversation.id} para match ${matchId}`);
+    this.logger.log(
+      `Conversación creada: ${conversation.id} para match ${matchId}`,
+    );
 
     return {
       success: true,
@@ -82,7 +99,11 @@ export class ConversationsService {
   /**
    * Send a message in a conversation
    */
-  async sendMessage(conversationId: string, senderId: string, dto: SendMessageDto) {
+  async sendMessage(
+    conversationId: string,
+    senderId: string,
+    dto: SendMessageDto,
+  ) {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
       include: {
@@ -96,13 +117,18 @@ export class ConversationsService {
     }
 
     // Verify sender is part of conversation
-    if (conversation.userId !== senderId && conversation.charterId !== senderId) {
+    if (
+      conversation.userId !== senderId &&
+      conversation.charterId !== senderId
+    ) {
       throw new ForbiddenException('No eres parte de esta conversación');
     }
 
     // Check if conversation is active
     if (conversation.status !== 'active') {
-      throw new BadRequestException(`La conversación está ${conversation.status}`);
+      throw new BadRequestException(
+        `La conversación está ${conversation.status}`,
+      );
     }
 
     // Check if expired
@@ -128,6 +154,11 @@ export class ConversationsService {
         },
       },
     });
+
+    // Emitir evento WebSocket a ambos usuarios en la sala
+    this.gateway.server
+      .to(`conversation:${conversationId}`)
+      .emit('new-message', message);
 
     return {
       success: true,
@@ -189,10 +220,7 @@ export class ConversationsService {
   async getUserConversations(userId: string) {
     const conversations = await this.prisma.conversation.findMany({
       where: {
-        OR: [
-          { userId },
-          { charterId: userId },
-        ],
+        OR: [{ userId }, { charterId: userId }],
         status: 'active',
       },
       include: {
@@ -238,7 +266,7 @@ export class ConversationsService {
 
     return {
       success: true,
-      data: conversations.map(conv => ({
+      data: conversations.map((conv) => ({
         ...conv,
         unreadCount: conv._count.messages,
         lastMessage: conv.messages[0] || null,
@@ -276,7 +304,9 @@ export class ConversationsService {
       },
     });
 
-    this.logger.log(`Conversación ${conversationId} cerrada por usuario ${userId}`);
+    this.logger.log(
+      `Conversación ${conversationId} cerrada por usuario ${userId}`,
+    );
 
     return {
       success: true,
@@ -353,4 +383,3 @@ export class ConversationsService {
     return updated;
   }
 }
-

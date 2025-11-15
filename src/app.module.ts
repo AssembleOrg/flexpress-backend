@@ -15,7 +15,7 @@ import { FeedbackModule } from './feedback/feedback.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { ReportsModule } from './reports/reports.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
-import { AuditInterceptor } from './common/interceptors/audit.interceptor';
+// import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { RequestLoggerInterceptor } from './common/interceptors/request-logger.interceptor';
 import { GeolocationService } from './common/services/geolocation.service';
 import configuration from './config/configuration';
@@ -50,10 +50,10 @@ import configuration from './config/configuration';
       provide: APP_INTERCEPTOR,
       useClass: RequestLoggerInterceptor,
     },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: AuditInterceptor,
-    },
+    // {
+    //   provide: APP_INTERCEPTOR,
+    //   useClass: AuditInterceptor,
+    // },
   ],
 })
 export class AppModule {}

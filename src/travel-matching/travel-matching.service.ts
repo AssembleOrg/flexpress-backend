@@ -1,13 +1,29 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateMatchDto, SelectCharterDto, ToggleAvailabilityDto, UpdateCharterOriginDto } from './dto';
+import {
+  CreateMatchDto,
+  SelectCharterDto,
+  ToggleAvailabilityDto,
+  UpdateCharterOriginDto,
+} from './dto';
 import {
   calculateTravelDistances,
   parseCoordinates,
   isWithinRadius,
   Coordinates,
 } from '../common/utils/distance.util';
-import { parseDate, nowInBuenosAires, addMinutes } from '../common/utils/date.util';
+import {
+  parseDate,
+  nowInBuenosAires,
+  addMinutes,
+} from '../common/utils/date.util';
+import { TravelMatchingGateway } from './travel-matching.gateway';
+import { ConversationsService } from 'src/conversations/conversations.service';
 
 export interface AvailableCharter {
   charterId: string;
@@ -25,7 +41,11 @@ export interface AvailableCharter {
 
 @Injectable()
 export class TravelMatchingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly travelMatchingGateway: TravelMatchingGateway,
+    private readonly conversationsService: ConversationsService,
+  ) {}
 
   /**
    * Create a new travel match request
@@ -42,14 +62,19 @@ export class TravelMatchingService {
 
     // Parse coordinates
     const pickup = parseCoordinates(dto.pickupLatitude, dto.pickupLongitude);
-    const destination = parseCoordinates(dto.destinationLatitude, dto.destinationLongitude);
+    const destination = parseCoordinates(
+      dto.destinationLatitude,
+      dto.destinationLongitude,
+    );
 
     // Parse scheduled date if provided
     let scheduledDate: Date | undefined;
     if (dto.scheduledDate) {
       const parsedDate = parseDate(dto.scheduledDate);
       if (parsedDate < nowInBuenosAires()) {
-        throw new BadRequestException('La fecha programada debe ser en el futuro');
+        throw new BadRequestException(
+          'La fecha programada debe ser en el futuro',
+        );
       }
       scheduledDate = parsedDate.toJSDate();
     }
@@ -59,7 +84,7 @@ export class TravelMatchingService {
       pickup,
       destination,
       dto.maxRadiusKm || 30,
-      dto.workersCount || 0
+      dto.workersCount || 0,
     );
 
     // Create the match
@@ -108,7 +133,7 @@ export class TravelMatchingService {
     origin: Coordinates,
     destination: Coordinates,
     maxRadiusKm: number,
-    workersCount: number = 0
+    workersCount: number = 0,
   ): Promise<AvailableCharter[]> {
     // Get all available charters with origin location set
     const availableCharters = await this.prisma.user.findMany({
@@ -134,13 +159,20 @@ export class TravelMatchingService {
 
       const charterOrigin = parseCoordinates(
         charter.originLatitude,
-        charter.originLongitude
+        charter.originLongitude,
       );
 
       // Check if charter is within radius of pickup location
       if (isWithinRadius(charterOrigin, origin, maxRadiusKm)) {
-        const distances = calculateTravelDistances(charterOrigin, origin, destination);
-        const estimatedCredits = await this.calculateCost(distances.total, workersCount);
+        const distances = calculateTravelDistances(
+          charterOrigin,
+          origin,
+          destination,
+        );
+        const estimatedCredits = await this.calculateCost(
+          distances.total,
+          workersCount,
+        );
 
         chartersWithDistance.push({
           charterId: charter.id,
@@ -159,13 +191,18 @@ export class TravelMatchingService {
     }
 
     // Sort by distance to pickup (closest first)
-    return chartersWithDistance.sort((a, b) => a.distanceToPickup - b.distanceToPickup);
+    return chartersWithDistance.sort(
+      (a, b) => a.distanceToPickup - b.distanceToPickup,
+    );
   }
 
   /**
    * Calculate cost based on distance, workers and system config
    */
-  async calculateCost(distanceKm: number, workersCount: number = 0): Promise<number> {
+  async calculateCost(
+    distanceKm: number,
+    workersCount: number = 0,
+  ): Promise<number> {
     // Get pricing configuration from system config
     const configs = await this.prisma.systemConfig.findMany({
       where: {
@@ -192,13 +229,13 @@ export class TravelMatchingService {
 
     // Calculate distance cost
     const distanceCost = Math.ceil(distanceKm * baseRate);
-    
+
     // Calculate worker cost
     const workerCost = workersCount * workerRate;
-    
+
     // Total cost
     const totalCost = distanceCost + workerCost;
-    
+
     return Math.max(totalCost, minimumCharge);
   }
 
@@ -216,11 +253,15 @@ export class TravelMatchingService {
     }
 
     if (match.userId !== userId) {
-      throw new ForbiddenException('Solo puedes seleccionar un chófer para tu propia búsqueda');
+      throw new ForbiddenException(
+        'Solo puedes seleccionar un chófer para tu propia búsqueda',
+      );
     }
 
     if (match.status !== 'searching') {
-      throw new BadRequestException(`La búsqueda está en estado ${match.status}, no se puede seleccionar chófer`);
+      throw new BadRequestException(
+        `La búsqueda está en estado ${match.status}, no se puede seleccionar chófer`,
+      );
     }
 
     // Verify charter exists and is available
@@ -238,12 +279,28 @@ export class TravelMatchingService {
     }
 
     // Calculate final cost
-    const charterOrigin = parseCoordinates(charter.originLatitude!, charter.originLongitude!);
-    const pickup = parseCoordinates(match.pickupLatitude, match.pickupLongitude);
-    const destination = parseCoordinates(match.destinationLatitude, match.destinationLongitude);
-    
-    const distances = calculateTravelDistances(charterOrigin, pickup, destination);
-    const estimatedCredits = await this.calculateCost(distances.total, match.workersCount);
+    const charterOrigin = parseCoordinates(
+      charter.originLatitude!,
+      charter.originLongitude!,
+    );
+    const pickup = parseCoordinates(
+      match.pickupLatitude,
+      match.pickupLongitude,
+    );
+    const destination = parseCoordinates(
+      match.destinationLatitude,
+      match.destinationLongitude,
+    );
+
+    const distances = calculateTravelDistances(
+      charterOrigin,
+      pickup,
+      destination,
+    );
+    const estimatedCredits = await this.calculateCost(
+      distances.total,
+      match.workersCount,
+    );
 
     // Update match
     const updatedMatch = await this.prisma.travelMatch.update({
@@ -294,11 +351,15 @@ export class TravelMatchingService {
     }
 
     if (match.charterId !== charterId) {
-      throw new ForbiddenException('Solo puedes responder a tus propias solicitudes');
+      throw new ForbiddenException(
+        'Solo puedes responder a tus propias solicitudes',
+      );
     }
 
     if (match.status !== 'pending') {
-      throw new BadRequestException(`La búsqueda está en estado ${match.status}, no se puede responder`);
+      throw new BadRequestException(
+        `La búsqueda está en estado ${match.status}, no se puede responder`,
+      );
     }
 
     const newStatus = accept ? 'accepted' : 'rejected';
@@ -329,6 +390,35 @@ export class TravelMatchingService {
       },
     });
 
+    if (accept) {
+      try {
+        // Crear la conversación automáticamente
+        const conversationResult = await this.conversationsService.createConversation(matchId);
+        const conversation = conversationResult.data;
+
+        console.log(
+          `✅ Conversación creada automáticamente: ${conversation.id} para el match ${matchId}`,
+        );
+      } catch (error) {
+        console.error(
+          `❌ Falló la creación automática de la conversación para el match ${matchId}`,
+          error,
+        );
+      }
+    }
+
+    // Notificar al cliente (user) sobre el cambio de estado.
+    // Esto se hace después de que la base de datos se ha actualizado con éxito.
+    if (
+      updatedMatch.status === 'accepted' ||
+      updatedMatch.status === 'rejected'
+    ) {
+      this.travelMatchingGateway.notifyMatchUpdate(updatedMatch.userId, {
+        matchId: updatedMatch.id,
+        status: updatedMatch.status,
+      });
+    }
+
     return updatedMatch;
   }
 
@@ -346,15 +436,21 @@ export class TravelMatchingService {
     }
 
     if (match.userId !== userId) {
-      throw new ForbiddenException('Solo puedes crear un viaje desde tu propia búsqueda');
+      throw new ForbiddenException(
+        'Solo puedes crear un viaje desde tu propia búsqueda',
+      );
     }
 
     if (match.status !== 'accepted') {
-      throw new BadRequestException('La búsqueda debe ser aceptada antes de crear el viaje');
+      throw new BadRequestException(
+        'La búsqueda debe ser aceptada antes de crear el viaje',
+      );
     }
 
     if (!match.charterId) {
-      throw new BadRequestException('No hay chófer seleccionado para esta búsqueda');
+      throw new BadRequestException(
+        'No hay chófer seleccionado para esta búsqueda',
+      );
     }
 
     if (match.tripId) {
@@ -372,7 +468,7 @@ export class TravelMatchingService {
 
     if (user.credits < (match.estimatedCredits || 0)) {
       throw new BadRequestException(
-        `Créditos insuficientes. Requeridos: ${match.estimatedCredits}, Disponibles: ${user.credits}`
+        `Créditos insuficientes. Requeridos: ${match.estimatedCredits}, Disponibles: ${user.credits}`,
       );
     }
 
@@ -447,6 +543,13 @@ export class TravelMatchingService {
           },
         },
         trip: true,
+        conversation: {
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+          },
+        },
       },
     });
 
@@ -486,6 +589,13 @@ export class TravelMatchingService {
             originAddress: true,
           },
         },
+        conversation: {
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -521,6 +631,13 @@ export class TravelMatchingService {
             avatar: true,
           },
         },
+        conversation: {
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -544,11 +661,15 @@ export class TravelMatchingService {
     }
 
     if (match.userId !== userId) {
-      throw new ForbiddenException('Solo puedes cancelar tus propias búsquedas');
+      throw new ForbiddenException(
+        'Solo puedes cancelar tus propias búsquedas',
+      );
     }
 
     if (['completed', 'cancelled'].includes(match.status)) {
-      throw new BadRequestException(`No se puede cancelar una búsqueda ${match.status}`);
+      throw new BadRequestException(
+        `No se puede cancelar una búsqueda ${match.status}`,
+      );
     }
 
     const updated = await this.prisma.travelMatch.update({
@@ -578,7 +699,7 @@ export class TravelMatchingService {
 
     if (!charter.originLatitude || !charter.originLongitude) {
       throw new BadRequestException(
-        'El chófer debe configurar su ubicación de origen antes de estar disponible'
+        'El chófer debe configurar su ubicación de origen antes de estar disponible',
       );
     }
 
@@ -673,4 +794,3 @@ export class TravelMatchingService {
     };
   }
 }
-
