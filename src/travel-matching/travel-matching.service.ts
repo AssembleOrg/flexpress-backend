@@ -396,8 +396,14 @@ export class TravelMatchingService {
         const conversationResult = await this.conversationsService.createConversation(matchId);
         const conversation = conversationResult.data;
 
+        // ✅ NUEVO: Guardar conversationId en el match
+        await this.prisma.travelMatch.update({
+          where: { id: matchId },
+          data: { conversationId: conversation.id },
+        });
+
         console.log(
-          `✅ Conversación creada automáticamente: ${conversation.id} para el match ${matchId}`,
+          `✅ Conversación creada y guardada: ${conversation.id} para el match ${matchId}`,
         );
       } catch (error) {
         console.error(
@@ -596,6 +602,21 @@ export class TravelMatchingService {
             createdAt: true,
           },
         },
+        trip: {
+          select: {
+            id: true,
+            status: true,
+            userId: true,
+            charterId: true,
+            address: true,
+            latitude: true,
+            longitude: true,
+            workersCount: true,
+            scheduledDate: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -636,6 +657,21 @@ export class TravelMatchingService {
             id: true,
             status: true,
             createdAt: true,
+          },
+        },
+        trip: {
+          select: {
+            id: true,
+            status: true,
+            userId: true,
+            charterId: true,
+            address: true,
+            latitude: true,
+            longitude: true,
+            workersCount: true,
+            scheduledDate: true,
+            createdAt: true,
+            updatedAt: true,
           },
         },
       },

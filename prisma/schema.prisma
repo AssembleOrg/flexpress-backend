@@ -54,19 +54,20 @@ model User {
 }
 
 model Trip {
-  id              String   @id @default(cuid())
+  id              String     @id @default(cuid())
   userId          String
   charterId       String
-  address         String   // Dirección completa del destino (ej: "Av. Hipólito Yrigoyen 8985, Temperley, Buenos Aires")
+  address         String     // Dirección completa del destino (ej: "Av. Hipólito Yrigoyen 8985, Temperley, Buenos Aires")
   latitude        String
   longitude       String
-  
+  status          TripStatus @default(pending)
+
   // Workers and scheduling
-  workersCount    Int      @default(0)  // Number of workers to help load/unload
-  scheduledDate   DateTime?             // When the trip is scheduled to start
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  workersCount    Int        @default(0)  // Number of workers to help load/unload
+  scheduledDate   DateTime?               // When the trip is scheduled to start
+
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
   deletedAt       DateTime?
 
   // Relations
@@ -163,7 +164,10 @@ model TravelMatch {
   
   // Trip creation
   tripId                String?             @unique     // Created trip after match confirmed
-  
+
+  // Conversation creation
+  conversationId        String?             @unique     // Created conversation when charter accepts
+
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
   expiresAt             DateTime?           // Match expiration time
@@ -173,7 +177,7 @@ model TravelMatch {
   user                  User                @relation("UserMatches", fields: [userId], references: [id])
   charter               User?               @relation("CharterMatches", fields: [charterId], references: [id])
   trip                  Trip?               @relation(fields: [tripId], references: [id])
-  conversation          Conversation?
+  conversation          Conversation?       @relation(fields: [conversationId], references: [id])
 
   @@map("travel_matches")
   @@index([status])
@@ -217,11 +221,11 @@ model Conversation {
   updatedAt       DateTime            @updatedAt
 
   // Relations
-  match           TravelMatch         @relation(fields: [matchId], references: [id])
   user            User                @relation("UserConversations", fields: [userId], references: [id])
   charter         User                @relation("CharterConversations", fields: [charterId], references: [id])
   messages        Message[]
   reports         Report[]
+  travelMatch     TravelMatch?
 
   @@map("conversations")
   @@index([status])
@@ -301,6 +305,13 @@ enum ConversationStatus {
   active          // Conversation is open
   closed          // Closed by either party
   expired         // Auto-closed after expiration
+}
+
+enum TripStatus {
+  pending           // Trip confirmed, waiting for completion
+  charter_completed // Charter finished work, waiting for client confirmation
+  completed         // Both parties confirmed completion
+  cancelled         // Trip was cancelled
 }
 
 enum ReportStatus {

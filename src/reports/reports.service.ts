@@ -195,7 +195,7 @@ export class ReportsService {
                 },
               },
             },
-            match: {
+            travelMatch: {
               select: {
                 id: true,
                 pickupAddress: true,

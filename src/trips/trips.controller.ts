@@ -8,6 +8,8 @@ import {
   Delete,
   Query,
   UseGuards,
+  Put,
+  Req,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -200,5 +202,45 @@ export class TripsController {
   @Auditory('Trip')
   async remove(@Param('id') id: string): Promise<void> {
     return this.tripsService.remove(id);
+  }
+
+  @Put(':id/charter-complete')
+  @ApiOperation({ summary: 'Charter marks trip as completed' })
+  @ApiParam({ name: 'id', description: 'Trip ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Trip marked as charter_completed',
+    type: TripResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Trip not found or not authorized',
+  })
+  @Auditory('Trip')
+  async charterCompleteTrip(
+    @Param('id') id: string,
+    @Req() req: any,
+  ): Promise<TripResponseDto> {
+    return this.tripsService.charterCompleteTrip(id, req.user.id);
+  }
+
+  @Put(':id/client-confirm')
+  @ApiOperation({ summary: 'Client confirms trip completion and triggers credit transfer' })
+  @ApiParam({ name: 'id', description: 'Trip ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Trip completed and credits transferred',
+    type: TripResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Trip not found or not authorized',
+  })
+  @Auditory('Trip')
+  async clientConfirmCompletion(
+    @Param('id') id: string,
+    @Req() req: any,
+  ): Promise<TripResponseDto> {
+    return this.tripsService.clientConfirmCompletion(id, req.user.id);
   }
 } 
