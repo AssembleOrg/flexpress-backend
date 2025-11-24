@@ -59,8 +59,9 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       'https://flexpress-front.vercel.app',
-      'http://localhost:3000', // Backend port
-      'http://localhost:3001', // Alternative backend port
+      'https://flexpress-front-production-2f47.up.railway.app',
+      'http://localhost:3000',
+      'http://localhost:3001',
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
