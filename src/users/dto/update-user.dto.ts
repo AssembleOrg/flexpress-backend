@@ -1,5 +1,5 @@
 import { IsEmail, IsString, IsOptional, IsEnum, IsNumber, Min } from 'class-validator';
-import { UserRole } from '../../common/enums';
+import { UserRole, VerificationStatus } from '../../common/enums';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -54,4 +54,13 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   originLongitude?: string;
+
+  // Charter verification fields
+  @IsOptional()
+  @IsEnum(VerificationStatus)
+  verificationStatus?: VerificationStatus;
+
+  @IsOptional()
+  @IsString()
+  rejectionReason?: string;
 } 

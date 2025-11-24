@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/co
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserLoginDto, CreateUserDto } from '../users/dto';
+import { UserRole } from '../common/enums';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -46,6 +47,8 @@ export class AuthService {
         documentationBackUrl: user.documentationBackUrl,
         number: user.number,
         avatar: user.avatar,
+        verificationStatus: user.verificationStatus,
+        rejectionReason: user.rejectionReason,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       },
@@ -71,10 +74,14 @@ export class AuthService {
     const hashedPassword = await this.hashPassword(createUserDto.password);
 
     // Create user (role validation is done in controller)
+    // New charters start as 'pending', regular users as 'verified'
+    const verificationStatus = createUserDto.role === UserRole.CHARTER ? 'pending' : 'verified';
+
     const user = await this.prisma.user.create({
       data: {
         ...createUserDto,
         password: hashedPassword,
+        verificationStatus,
       },
       select: {
         id: true,
@@ -87,11 +94,19 @@ export class AuthService {
         documentationBackUrl: true,
         number: true,
         avatar: true,
+        verificationStatus: true,
+        rejectionReason: true,
         createdAt: true,
         updatedAt: true,
       },
     });
 
-    return user;
+    // Generate JWT token igual que login
+    const payload = { email: user.email, sub: user.id, role: user.role };
+
+    return {
+      access_token: this.jwtService.sign(payload),
+      user,
+    };
   }
 } 

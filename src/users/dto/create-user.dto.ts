@@ -37,4 +37,17 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   avatar?: string;
+
+  // Charter-specific fields (origin location)
+  @IsOptional()
+  @IsString()
+  originAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  originLatitude?: string;
+
+  @IsOptional()
+  @IsString()
+  originLongitude?: string;
 } 

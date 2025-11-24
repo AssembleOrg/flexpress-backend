@@ -8,6 +8,9 @@ import {
   Delete,
   Query,
   UseGuards,
+  Request,
+  BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -23,6 +26,7 @@ import {
   CreateUserDto,
   UpdateUserDto,
   UserResponseDto,
+  VerifyCharterDto,
 } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -205,6 +209,43 @@ export class UsersController {
     return this.usersService.findWithoutPagination();
   }
 
+  @Get('charters/pending')
+  @ApiOperation({ summary: 'Get all pending charters awaiting verification (admin/subadmin only)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Pending charters retrieved successfully',
+    type: [UserResponseDto],
+    examples: {
+      success: {
+        summary: 'Pending Charters Response',
+        value: [
+          {
+            id: 'clx1234567890abcdef',
+            email: 'newcharter@example.com',
+            name: 'New Charter Service',
+            role: 'charter',
+            address: 'Buenos Aires, Argentina',
+            verificationStatus: 'pending',
+            documentationFrontUrl: 'https://example.com/front.jpg',
+            documentationBackUrl: 'https://example.com/back.jpg',
+            createdAt: '2024-01-15T10:30:00.000Z',
+          },
+        ],
+      },
+    },
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'User is not authorized to view pending charters',
+  })
+  async findPendingCharters(@Request() req): Promise<UserResponseDto[]> {
+    const userRole = req.user?.role;
+    if (userRole !== 'admin' && userRole !== 'subadmin') {
+      throw new ForbiddenException('Solo administradores pueden ver charters pendientes');
+    }
+    return this.usersService.findPendingCharters();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a user by ID' })
   @ApiParam({ name: 'id', description: 'User ID' })
@@ -318,5 +359,109 @@ export class UsersController {
   @Auditory('User')
   async remove(@Param('id') id: string): Promise<void> {
     return this.usersService.remove(id);
+  }
+
+  @Patch(':id/verify')
+  @ApiOperation({ summary: 'Verify or reject a charter (admin/subadmin only)' })
+  @ApiParam({ name: 'id', description: 'Charter User ID', example: 'clx1234567890abcdef' })
+  @ApiBody({
+    type: VerifyCharterDto,
+    examples: {
+      approve: {
+        summary: 'Approve Charter',
+        value: {
+          status: 'verified',
+        },
+      },
+      reject: {
+        summary: 'Reject Charter',
+        value: {
+          status: 'rejected',
+          rejectionReason: 'Documentación incompleta o ilegible',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Charter verification status updated successfully',
+    type: UserResponseDto,
+    examples: {
+      verified: {
+        summary: 'Charter Verified',
+        value: {
+          id: 'clx1234567890abcdef',
+          email: 'charter@example.com',
+          name: 'Charter Service',
+          role: 'charter',
+          verificationStatus: 'verified',
+          verifiedAt: '2024-01-15T11:45:00.000Z',
+          verifiedBy: 'admin-user-id',
+        },
+      },
+      rejected: {
+        summary: 'Charter Rejected',
+        value: {
+          id: 'clx1234567890abcdef',
+          email: 'charter@example.com',
+          name: 'Charter Service',
+          role: 'charter',
+          verificationStatus: 'rejected',
+          rejectionReason: 'Documentación incompleta o ilegible',
+          verifiedAt: '2024-01-15T11:45:00.000Z',
+          verifiedBy: 'admin-user-id',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid request',
+    examples: {
+      notCharter: {
+        summary: 'Not a Charter',
+        value: {
+          message: 'Este usuario no es un charter',
+          error: 'Bad Request',
+          statusCode: 400,
+        },
+      },
+      alreadyVerified: {
+        summary: 'Already Verified',
+        value: {
+          message: 'Este charter ya fue verificado',
+          error: 'Bad Request',
+          statusCode: 400,
+        },
+      },
+      missingReason: {
+        summary: 'Missing Rejection Reason',
+        value: {
+          message: 'Debe proporcionar una razón de rechazo',
+          error: 'Bad Request',
+          statusCode: 400,
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'User is not authorized to verify charters',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Charter not found',
+  })
+  @Auditory('User')
+  async verifyCharter(
+    @Param('id') id: string,
+    @Body() verifyCharterDto: VerifyCharterDto,
+    @Request() req,
+  ): Promise<UserResponseDto> {
+    const userRole = req.user?.role;
+    if (userRole !== 'admin' && userRole !== 'subadmin') {
+      throw new ForbiddenException('Solo administradores pueden verificar charters');
+    }
+    return this.usersService.verifyCharter(id, verifyCharterDto, req.user.sub);
   }
 } 

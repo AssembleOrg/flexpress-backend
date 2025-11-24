@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateUserDto, UpdateUserDto, UserResponseDto } from './dto';
+import { CreateUserDto, UpdateUserDto, UserResponseDto, VerifyCharterDto } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { AuthService } from '../auth/auth.service';
 
@@ -198,5 +198,95 @@ export class UsersService {
     });
 
     return users as UserResponseDto[];
+  }
+
+  async verifyCharter(
+    charterId: string,
+    verifyDto: VerifyCharterDto,
+    adminId: string,
+  ): Promise<UserResponseDto> {
+    const charter = await this.prisma.user.findFirst({
+      where: { id: charterId, deletedAt: null },
+    });
+
+    if (!charter) {
+      throw new NotFoundException('Charter no encontrado');
+    }
+
+    if (charter.role !== 'charter') {
+      throw new BadRequestException('Este usuario no es un charter');
+    }
+
+    if (charter.verificationStatus !== 'pending') {
+      throw new BadRequestException(
+        `Este charter ya fue ${charter.verificationStatus === 'verified' ? 'verificado' : 'rechazado'}`,
+      );
+    }
+
+    // Validate rejection reason is provided when rejecting
+    if (verifyDto.status === 'rejected' && !verifyDto.rejectionReason) {
+      throw new BadRequestException('Debe proporcionar una razón de rechazo');
+    }
+
+    const updatedCharter = await this.prisma.user.update({
+      where: { id: charterId },
+      data: {
+        verificationStatus: verifyDto.status,
+        rejectionReason: verifyDto.status === 'rejected' ? verifyDto.rejectionReason : null,
+        verifiedAt: new Date(),
+        verifiedBy: adminId,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        address: true,
+        credits: true,
+        documentationFrontUrl: true,
+        documentationBackUrl: true,
+        number: true,
+        avatar: true,
+        verificationStatus: true,
+        rejectionReason: true,
+        verifiedAt: true,
+        verifiedBy: true,
+        createdAt: true,
+        updatedAt: true,
+        deletedAt: true,
+      },
+    });
+
+    return updatedCharter as UserResponseDto;
+  }
+
+  async findPendingCharters(): Promise<UserResponseDto[]> {
+    const charters = await this.prisma.user.findMany({
+      where: {
+        role: 'charter',
+        verificationStatus: 'pending',
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        address: true,
+        credits: true,
+        documentationFrontUrl: true,
+        documentationBackUrl: true,
+        number: true,
+        avatar: true,
+        verificationStatus: true,
+        rejectionReason: true,
+        createdAt: true,
+        updatedAt: true,
+        deletedAt: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return charters as UserResponseDto[];
   }
 } 

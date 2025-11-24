@@ -135,11 +135,12 @@ export class TravelMatchingService {
     maxRadiusKm: number,
     workersCount: number = 0,
   ): Promise<AvailableCharter[]> {
-    // Get all available charters with origin location set
+    // Get all available charters with origin location set and verified status
     const availableCharters = await this.prisma.user.findMany({
       where: {
         role: 'charter',
         deletedAt: null,
+        verificationStatus: 'verified', // Only verified charters can appear in searches
         originLatitude: { not: null },
         originLongitude: { not: null },
         charterAvailability: {
@@ -731,6 +732,13 @@ export class TravelMatchingService {
 
     if (!charter || charter.role !== 'charter') {
       throw new NotFoundException('Chófer no encontrado');
+    }
+
+    // Check if charter is verified by admin
+    if (charter.verificationStatus !== 'verified') {
+      throw new BadRequestException(
+        'Tu cuenta está pendiente de validación. Serás notificado cuando un administrador apruebe tu cuenta.',
+      );
     }
 
     if (!charter.originLatitude || !charter.originLongitude) {

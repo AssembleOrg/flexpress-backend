@@ -30,7 +30,13 @@ model User {
   originAddress         String?   // Human-readable address (e.g., "St Martin 425, Buenos Aires")
   originLatitude        String?   // Charter's fixed starting location
   originLongitude       String?   // Charter's fixed starting location
-  
+
+  // Charter verification (default verified so existing users are not affected)
+  verificationStatus    VerificationStatus @default(verified)
+  rejectionReason       String?
+  verifiedAt            DateTime?
+  verifiedBy            String?   // Admin user ID who verified
+
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   deletedAt             DateTime?
@@ -319,4 +325,10 @@ enum ReportStatus {
   investigating   // Admin is reviewing
   resolved        // Resolved by admin
   dismissed       // Report was dismissed
+}
+
+enum VerificationStatus {
+  pending         // New charter awaiting validation
+  verified        // Admin approved, can operate
+  rejected        // Admin rejected
 }
