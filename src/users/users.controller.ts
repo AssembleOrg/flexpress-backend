@@ -361,6 +361,49 @@ export class UsersController {
     return this.usersService.remove(id);
   }
 
+  @Patch(':id/update-dni-urls')
+  @ApiOperation({ summary: 'Update DNI URLs after UploadThing upload' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        documentationFrontUrl: { type: 'string' },
+        documentationBackUrl: { type: 'string' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'DNI URLs updated successfully',
+    type: UserResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'User is not authorized to update this user',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'User not found',
+  })
+  @Auditory('User')
+  async updateDniUrls(
+    @Param('id') id: string,
+    @Body() body: { documentationFrontUrl: string; documentationBackUrl: string },
+    @Request() req,
+  ): Promise<UserResponseDto> {
+    // Validar permisos (mismo user o admin)
+    if (id !== req.user.id && !['admin', 'subadmin'].includes(req.user.role)) {
+      throw new ForbiddenException('Sin permiso');
+    }
+
+    // Actualizar URLs
+    return this.usersService.update(id, {
+      documentationFrontUrl: body.documentationFrontUrl,
+      documentationBackUrl: body.documentationBackUrl,
+    });
+  }
+
   @Patch(':id/verify')
   @ApiOperation({ summary: 'Verify or reject a charter (admin/subadmin only)' })
   @ApiParam({ name: 'id', description: 'Charter User ID', example: 'clx1234567890abcdef' })
@@ -462,6 +505,6 @@ export class UsersController {
     if (userRole !== 'admin' && userRole !== 'subadmin') {
       throw new ForbiddenException('Solo administradores pueden verificar charters');
     }
-    return this.usersService.verifyCharter(id, verifyCharterDto, req.user.sub);
+    return this.usersService.verifyCharter(id, verifyCharterDto, req.user.id);
   }
 } 
