@@ -140,4 +140,32 @@ export class SystemConfigService {
       return '+54 11 1234-5678';
     }
   }
+
+  /**
+   * Get public pricing configuration for credit purchase modal
+   * Returns creditsPerKm, minimumCharge, and creditPrice
+   */
+  async getPublicPricing(): Promise<{
+    creditsPerKm: number;
+    minimumCharge: number;
+    creditPrice: number;
+  }> {
+    const [baseRateConfig, minChargeConfig, creditPriceConfig] = await Promise.all([
+      this.prisma.systemConfig.findUnique({
+        where: { key: 'pricing_base_rate_per_km' },
+      }),
+      this.prisma.systemConfig.findUnique({
+        where: { key: 'pricing_minimum_charge' },
+      }),
+      this.prisma.systemConfig.findUnique({
+        where: { key: 'credit_price' },
+      }),
+    ]);
+
+    return {
+      creditsPerKm: baseRateConfig ? parseFloat(baseRateConfig.value) : 15,
+      minimumCharge: minChargeConfig ? parseFloat(minChargeConfig.value) : 50,
+      creditPrice: creditPriceConfig ? parseFloat(creditPriceConfig.value) : 100,
+    };
+  }
 } 

@@ -30,12 +30,34 @@ import { Auditory } from '../common/decorators/auditory.decorator';
 
 @ApiTags('System Configuration')
 @Controller('system-config')
-@UseGuards(JwtAuthGuard)
-@ApiBearerAuth()
 export class SystemConfigController {
   constructor(private readonly systemConfigService: SystemConfigService) {}
 
+  /**
+   * PUBLIC ENDPOINT - No authentication required
+   * Returns pricing configuration for credit purchase modal
+   */
+  @Get('public/pricing')
+  @ApiOperation({ summary: 'Get public pricing configuration (no auth required)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Pricing configuration retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        creditsPerKm: { type: 'number', example: 15 },
+        minimumCharge: { type: 'number', example: 50 },
+        creditPrice: { type: 'number', example: 100 },
+      },
+    },
+  })
+  async getPublicPricing() {
+    return this.systemConfigService.getPublicPricing();
+  }
+
   @Post()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a new system configuration' })
   @ApiBody({ 
     type: CreateSystemConfigDto,
@@ -96,8 +118,10 @@ export class SystemConfigController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all system configurations with pagination' })
-  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 }) 
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
   @ApiResponse({
     status: 200,
@@ -143,6 +167,8 @@ export class SystemConfigController {
   }
 
   @Get('all')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all system configurations without pagination' })
   @ApiResponse({
     status: 200,
@@ -154,6 +180,8 @@ export class SystemConfigController {
   }
 
   @Get('key/:key')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get a system configuration by key' })
   @ApiParam({ name: 'key', description: 'Configuration key' })
   @ApiResponse({
@@ -170,6 +198,8 @@ export class SystemConfigController {
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get a system configuration by ID' })
   @ApiParam({ name: 'id', description: 'Configuration ID' })
   @ApiResponse({
@@ -186,6 +216,8 @@ export class SystemConfigController {
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Update a system configuration' })
   @ApiParam({ name: 'id', description: 'Configuration ID' })
   @ApiBody({ type: UpdateSystemConfigDto })
@@ -207,6 +239,8 @@ export class SystemConfigController {
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete a system configuration' })
   @ApiParam({ name: 'id', description: 'Configuration ID' })
   @ApiResponse({

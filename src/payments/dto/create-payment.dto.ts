@@ -14,6 +14,10 @@ export class CreatePaymentDto {
   amount: number;
 
   @IsOptional()
+  @IsString()
+  receiptUrl?: string;
+
+  @IsOptional()
   @IsEnum(PaymentStatus)
   status?: PaymentStatus = PaymentStatus.PENDING;
 } 

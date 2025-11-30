@@ -8,6 +8,7 @@ import {
   Delete,
   Query,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -23,6 +24,7 @@ import {
   CreatePaymentDto,
   UpdatePaymentDto,
   PaymentResponseDto,
+  RejectPaymentDto,
 } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -135,6 +137,33 @@ export class PaymentsController {
     return this.paymentsService.findWithoutPagination();
   }
 
+  @Get('pending/count')
+  @ApiOperation({ summary: 'Get count of pending payments (Admin)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Pending payments count',
+    schema: {
+      type: 'object',
+      properties: {
+        count: { type: 'number', example: 3 }
+      }
+    }
+  })
+  async getPendingCount(): Promise<{ count: number }> {
+    return this.paymentsService.getPendingCount();
+  }
+
+  @Get('my')
+  @ApiOperation({ summary: 'Get my payments (Client)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Payments retrieved successfully',
+    type: [PaymentResponseDto],
+  })
+  async getMyPayments(@Request() req: any): Promise<PaymentResponseDto[]> {
+    return this.paymentsService.getPaymentsByUserId(req.user.id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a payment by ID' })
   @ApiParam({ name: 'id', description: 'Payment ID' })
@@ -186,5 +215,51 @@ export class PaymentsController {
   @Auditory('Payment')
   async remove(@Param('id') id: string): Promise<void> {
     return this.paymentsService.remove(id);
+  }
+
+  @Patch(':id/approve')
+  @ApiOperation({ summary: 'Approve a payment request (Admin)' })
+  @ApiParam({ name: 'id', description: 'Payment ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment approved and credits added to user',
+    type: PaymentResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Payment not found',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Payment already processed',
+  })
+  @Auditory('Payment')
+  async approvePayment(@Param('id') id: string): Promise<PaymentResponseDto> {
+    return this.paymentsService.approvePayment(id);
+  }
+
+  @Patch(':id/reject')
+  @ApiOperation({ summary: 'Reject a payment request (Admin)' })
+  @ApiParam({ name: 'id', description: 'Payment ID' })
+  @ApiBody({ type: RejectPaymentDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment rejected',
+    type: PaymentResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Payment not found',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Payment already processed',
+  })
+  @Auditory('Payment')
+  async rejectPayment(
+    @Param('id') id: string,
+    @Body() rejectDto: RejectPaymentDto,
+  ): Promise<PaymentResponseDto> {
+    return this.paymentsService.rejectPayment(id, rejectDto.reason);
   }
 } 

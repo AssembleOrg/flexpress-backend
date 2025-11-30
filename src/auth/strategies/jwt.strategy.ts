@@ -36,6 +36,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         documentationBackUrl: true,
         number: true,
         avatar: true,
+        verificationStatus: true,
         createdAt: true,
         updatedAt: true,
       },

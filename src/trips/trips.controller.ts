@@ -28,11 +28,12 @@ import {
 } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { VerifiedCharterGuard } from '../auth/guards/verified-charter.guard';
 import { Auditory } from '../common/decorators/auditory.decorator';
 
 @ApiTags('Trips')
 @Controller('trips')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, VerifiedCharterGuard)
 @ApiBearerAuth()
 export class TripsController {
   constructor(private readonly tripsService: TripsService) {}
@@ -136,8 +137,9 @@ export class TripsController {
   })
   async findAll(
     @Query() paginationQuery: PaginationQueryDto,
+    @Req() req: any,
   ): Promise<PaginatedResponseDto<TripResponseDto>> {
-    return this.tripsService.findAll(paginationQuery);
+    return this.tripsService.findAll(paginationQuery, req.user.id, req.user.role);
   }
 
   @Get('all')
@@ -147,8 +149,8 @@ export class TripsController {
     description: 'Trips retrieved successfully',
     type: [TripResponseDto],
   })
-  async findAllWithoutPagination(): Promise<TripResponseDto[]> {
-    return this.tripsService.findWithoutPagination();
+  async findAllWithoutPagination(@Req() req: any): Promise<TripResponseDto[]> {
+    return this.tripsService.findWithoutPagination(req.user.id, req.user.role);
   }
 
   @Get(':id')
@@ -163,8 +165,11 @@ export class TripsController {
     status: 404,
     description: 'Trip not found',
   })
-  async findOne(@Param('id') id: string): Promise<TripResponseDto> {
-    return this.tripsService.findOne(id);
+  async findOne(
+    @Param('id') id: string,
+    @Req() req: any,
+  ): Promise<TripResponseDto> {
+    return this.tripsService.findOne(id, req.user.id, req.user.role);
   }
 
   @Patch(':id')
@@ -184,8 +189,9 @@ export class TripsController {
   async update(
     @Param('id') id: string,
     @Body() updateTripDto: UpdateTripDto,
+    @Req() req: any,
   ): Promise<TripResponseDto> {
-    return this.tripsService.update(id, updateTripDto);
+    return this.tripsService.update(id, updateTripDto, req.user.id, req.user.role);
   }
 
   @Delete(':id')
@@ -200,8 +206,11 @@ export class TripsController {
     description: 'Trip not found',
   })
   @Auditory('Trip')
-  async remove(@Param('id') id: string): Promise<void> {
-    return this.tripsService.remove(id);
+  async remove(
+    @Param('id') id: string,
+    @Req() req: any,
+  ): Promise<void> {
+    return this.tripsService.remove(id, req.user.id, req.user.role);
   }
 
   @Put(':id/charter-complete')

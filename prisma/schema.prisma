@@ -86,17 +86,19 @@ model Trip {
 }
 
 model Payment {
-  id        String        @id @default(cuid())
-  userId    String
-  credits   Int
-  amount    Float
-  status    PaymentStatus @default(pending)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  deletedAt DateTime?
+  id         String        @id @default(cuid())
+  userId     String
+  credits    Int
+  amount     Float
+  status     PaymentStatus @default(pending)
+  receiptUrl String?
+  rejectionReason String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  deletedAt  DateTime?
 
   // Relations
-  user     User          @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 
   @@map("payments")
 }

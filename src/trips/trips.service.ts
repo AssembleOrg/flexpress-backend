@@ -44,13 +44,29 @@ export class TripsService {
     return trip as TripResponseDto;
   }
 
-  async findAll(paginationQuery: PaginationQueryDto): Promise<PaginatedResponseDto<TripResponseDto>> {
+  async findAll(
+    paginationQuery: PaginationQueryDto,
+    userId: string,
+    userRole: string,
+  ): Promise<PaginatedResponseDto<TripResponseDto>> {
     const { page = 1, limit = 10 } = paginationQuery;
     const skip = (page - 1) * limit;
 
+    // Construir WHERE clause con filtrado por usuario
+    const whereClause: any = { deletedAt: null };
+
+    // Admins y subadmins ven TODOS los trips
+    if (userRole !== 'admin' && userRole !== 'subadmin') {
+      // Usuarios regulares y charters solo ven SUS trips
+      whereClause.OR = [
+        { userId: userId },      // Trips donde soy el cliente
+        { charterId: userId },   // Trips donde soy el charter
+      ];
+    }
+
     const [trips, total] = await Promise.all([
       this.prisma.trip.findMany({
-        where: { deletedAt: null },
+        where: whereClause,
         skip,
         take: limit,
         include: {
@@ -80,7 +96,7 @@ export class TripsService {
         },
       }),
       this.prisma.trip.count({
-        where: { deletedAt: null },
+        where: whereClause,
       }),
     ]);
 
@@ -101,9 +117,25 @@ export class TripsService {
     };
   }
 
-  async findOne(id: string): Promise<TripResponseDto> {
+  async findOne(
+    id: string,
+    userId: string,
+    userRole: string,
+  ): Promise<TripResponseDto> {
+    // Construir WHERE con validación de propiedad
+    const whereClause: any = { id, deletedAt: null };
+
+    // Admins y subadmins pueden ver cualquier trip
+    if (userRole !== 'admin' && userRole !== 'subadmin') {
+      // Usuarios regulares y charters solo ven SUS trips
+      whereClause.OR = [
+        { userId: userId },      // Trips donde soy el cliente
+        { charterId: userId },   // Trips donde soy el charter
+      ];
+    }
+
     const trip = await this.prisma.trip.findFirst({
-      where: { id, deletedAt: null },
+      where: whereClause,
       include: {
         user: {
           select: {
@@ -132,21 +164,40 @@ export class TripsService {
     });
 
     if (!trip) {
-      throw new NotFoundException('Viaje no encontrado');
+      throw new NotFoundException('Viaje no encontrado o no tienes permiso para verlo');
     }
 
     return trip as TripResponseDto;
   }
 
-  async update(id: string, updateTripDto: UpdateTripDto): Promise<TripResponseDto> {
-    const trip = await this.prisma.trip.findFirst({
-      where: { id, deletedAt: null },
-    });
+  async update(
+    id: string,
+    updateTripDto: UpdateTripDto,
+    userId: string,
+    userRole: string,
+  ): Promise<TripResponseDto> {
+    // Validar que el usuario tiene permiso para modificar este trip
+    const whereClause: any = { id, deletedAt: null };
 
-    if (!trip) {
-      throw new NotFoundException('Viaje no encontrado');
+    // Admins y subadmins pueden modificar cualquier trip
+    if (userRole !== 'admin' && userRole !== 'subadmin') {
+      // Usuarios regulares y charters solo pueden modificar SUS trips
+      whereClause.OR = [
+        { userId: userId },
+        { charterId: userId },
+      ];
     }
 
+    // Verificar que existe Y que el usuario tiene acceso
+    const existingTrip = await this.prisma.trip.findFirst({
+      where: whereClause,
+    });
+
+    if (!existingTrip) {
+      throw new NotFoundException('Viaje no encontrado o no tienes permiso para modificarlo');
+    }
+
+    // Proceder con el update
     const updatedTrip = await this.prisma.trip.update({
       where: { id },
       data: updateTripDto,
@@ -180,13 +231,30 @@ export class TripsService {
     return updatedTrip as TripResponseDto;
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(
+    id: string,
+    userId: string,
+    userRole: string,
+  ): Promise<void> {
+    // Validar que el usuario tiene permiso para eliminar este trip
+    const whereClause: any = { id, deletedAt: null };
+
+    // Admins y subadmins pueden eliminar cualquier trip
+    if (userRole !== 'admin' && userRole !== 'subadmin') {
+      // Usuarios regulares y charters solo pueden eliminar SUS trips
+      whereClause.OR = [
+        { userId: userId },
+        { charterId: userId },
+      ];
+    }
+
+    // Verificar que existe Y que el usuario tiene acceso
     const trip = await this.prisma.trip.findFirst({
-      where: { id, deletedAt: null },
+      where: whereClause,
     });
 
     if (!trip) {
-      throw new NotFoundException('Viaje no encontrado');
+      throw new NotFoundException('Viaje no encontrado o no tienes permiso para eliminarlo');
     }
 
     // Soft delete
@@ -196,9 +264,24 @@ export class TripsService {
     });
   }
 
-  async findWithoutPagination(): Promise<TripResponseDto[]> {
+  async findWithoutPagination(
+    userId: string,
+    userRole: string,
+  ): Promise<TripResponseDto[]> {
+    // Construir WHERE clause con filtrado por usuario
+    const whereClause: any = { deletedAt: null };
+
+    // Admins y subadmins ven TODOS los trips
+    if (userRole !== 'admin' && userRole !== 'subadmin') {
+      // Usuarios regulares y charters solo ven SUS trips
+      whereClause.OR = [
+        { userId: userId },      // Trips donde soy el cliente
+        { charterId: userId },   // Trips donde soy el charter
+      ];
+    }
+
     const trips = await this.prisma.trip.findMany({
-      where: { deletedAt: null },
+      where: whereClause,
       include: {
         user: {
           select: {

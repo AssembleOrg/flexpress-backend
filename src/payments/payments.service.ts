@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentDto, UpdatePaymentDto, PaymentResponseDto } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
@@ -131,6 +131,105 @@ export class PaymentsService {
   async findWithoutPagination(): Promise<PaymentResponseDto[]> {
     const payments = await this.prisma.payment.findMany({
       where: { deletedAt: null },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    return payments as PaymentResponseDto[];
+  }
+
+  async approvePayment(paymentId: string): Promise<PaymentResponseDto> {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: { user: true },
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Pago no encontrado');
+    }
+
+    if (payment.status !== 'pending') {
+      throw new BadRequestException('El pago ya fue procesado');
+    }
+
+    // TRANSACCIÓN: Actualizar payment + incrementar créditos del usuario
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updatedPayment = await tx.payment.update({
+        where: { id: paymentId },
+        data: { status: 'accepted' },
+        include: { user: true },
+      });
+
+      await tx.user.update({
+        where: { id: payment.userId },
+        data: {
+          credits: { increment: payment.credits },
+        },
+      });
+
+      return updatedPayment;
+    });
+
+    return result as PaymentResponseDto;
+  }
+
+  async rejectPayment(paymentId: string, reason?: string): Promise<PaymentResponseDto> {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Pago no encontrado');
+    }
+
+    if (payment.status !== 'pending') {
+      throw new BadRequestException('El pago ya fue procesado');
+    }
+
+    const updatedPayment = await this.prisma.payment.update({
+      where: { id: paymentId },
+      data: {
+        status: 'rejected',
+        rejectionReason: reason,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    return updatedPayment as PaymentResponseDto;
+  }
+
+  async getPendingCount(): Promise<{ count: number }> {
+    const count = await this.prisma.payment.count({
+      where: { status: 'pending', deletedAt: null },
+    });
+
+    return { count };
+  }
+
+  async getPaymentsByUserId(userId: string): Promise<PaymentResponseDto[]> {
+    const payments = await this.prisma.payment.findMany({
+      where: {
+        userId,
+        deletedAt: null,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
       include: {
         user: {
           select: {
