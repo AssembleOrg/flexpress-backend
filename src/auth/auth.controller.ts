@@ -1,5 +1,6 @@
 import { Controller, Post, Body, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { UserLoginDto, CreateUserDto } from '../users/dto';
 import { Public } from '../common/decorators/public.decorator';
@@ -11,6 +12,7 @@ export class AuthController {
 
   @Public()
   @Post('login')
+  @Throttle({ short: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'User login' })
   @ApiBody({ 
@@ -68,6 +70,7 @@ export class AuthController {
 
   @Public()
   @Post('register')
+  @Throttle({ short: { limit: 3, ttl: 60000 } })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Register a new user (no admin/subadmin roles allowed)' })
   @ApiBody({ 

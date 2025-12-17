@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Request,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -181,13 +182,17 @@ export class PaymentsController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update a payment' })
+  @ApiOperation({ summary: 'Update a payment (admin/subadmin or owner only)' })
   @ApiParam({ name: 'id', description: 'Payment ID' })
   @ApiBody({ type: UpdatePaymentDto })
   @ApiResponse({
     status: 200,
     description: 'Payment updated successfully',
     type: PaymentResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Not authorized to update this payment',
   })
   @ApiResponse({
     status: 404,
@@ -197,33 +202,58 @@ export class PaymentsController {
   async update(
     @Param('id') id: string,
     @Body() updatePaymentDto: UpdatePaymentDto,
+    @Request() req: any,
   ): Promise<PaymentResponseDto> {
+    // Validar ownership: admin/subadmin o dueño del pago
+    const userRole = req.user?.role;
+    if (!['admin', 'subadmin'].includes(userRole)) {
+      const payment = await this.paymentsService.findOne(id);
+      if (payment.userId !== req.user.id) {
+        throw new ForbiddenException('No tienes permiso para modificar este pago');
+      }
+    }
     return this.paymentsService.update(id, updatePaymentDto);
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete a payment (soft delete)' })
+  @ApiOperation({ summary: 'Delete a payment (admin/subadmin or owner only)' })
   @ApiParam({ name: 'id', description: 'Payment ID' })
   @ApiResponse({
     status: 200,
     description: 'Payment deleted successfully',
   })
   @ApiResponse({
+    status: 403,
+    description: 'Not authorized to delete this payment',
+  })
+  @ApiResponse({
     status: 404,
     description: 'Payment not found',
   })
   @Auditory('Payment')
-  async remove(@Param('id') id: string): Promise<void> {
+  async remove(@Param('id') id: string, @Request() req: any): Promise<void> {
+    // Validar ownership: admin/subadmin o dueño del pago
+    const userRole = req.user?.role;
+    if (!['admin', 'subadmin'].includes(userRole)) {
+      const payment = await this.paymentsService.findOne(id);
+      if (payment.userId !== req.user.id) {
+        throw new ForbiddenException('No tienes permiso para eliminar este pago');
+      }
+    }
     return this.paymentsService.remove(id);
   }
 
   @Patch(':id/approve')
-  @ApiOperation({ summary: 'Approve a payment request (Admin)' })
+  @ApiOperation({ summary: 'Approve a payment request (Admin/Subadmin only)' })
   @ApiParam({ name: 'id', description: 'Payment ID' })
   @ApiResponse({
     status: 200,
     description: 'Payment approved and credits added to user',
     type: PaymentResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Only admins can approve payments',
   })
   @ApiResponse({
     status: 404,
@@ -234,18 +264,26 @@ export class PaymentsController {
     description: 'Payment already processed',
   })
   @Auditory('Payment')
-  async approvePayment(@Param('id') id: string): Promise<PaymentResponseDto> {
+  async approvePayment(@Param('id') id: string, @Request() req: any): Promise<PaymentResponseDto> {
+    const userRole = req.user?.role;
+    if (!['admin', 'subadmin'].includes(userRole)) {
+      throw new ForbiddenException('Solo administradores pueden aprobar pagos');
+    }
     return this.paymentsService.approvePayment(id);
   }
 
   @Patch(':id/reject')
-  @ApiOperation({ summary: 'Reject a payment request (Admin)' })
+  @ApiOperation({ summary: 'Reject a payment request (Admin/Subadmin only)' })
   @ApiParam({ name: 'id', description: 'Payment ID' })
   @ApiBody({ type: RejectPaymentDto })
   @ApiResponse({
     status: 200,
     description: 'Payment rejected',
     type: PaymentResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Only admins can reject payments',
   })
   @ApiResponse({
     status: 404,
@@ -259,7 +297,12 @@ export class PaymentsController {
   async rejectPayment(
     @Param('id') id: string,
     @Body() rejectDto: RejectPaymentDto,
+    @Request() req: any,
   ): Promise<PaymentResponseDto> {
+    const userRole = req.user?.role;
+    if (!['admin', 'subadmin'].includes(userRole)) {
+      throw new ForbiddenException('Solo administradores pueden rechazar pagos');
+    }
     return this.paymentsService.rejectPayment(id, rejectDto.reason);
   }
 } 

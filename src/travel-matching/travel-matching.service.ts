@@ -155,6 +155,9 @@ export class TravelMatchingService {
     // Filter and calculate distances
     const chartersWithDistance: AvailableCharter[] = [];
 
+    // 🔧 FIX N+1: Load pricing config ONCE before the loop
+    const pricingConfig = await this.loadPricingConfig();
+
     for (const charter of availableCharters) {
       if (!charter.originLatitude || !charter.originLongitude) continue;
 
@@ -170,9 +173,11 @@ export class TravelMatchingService {
           origin,
           destination,
         );
+        // Pass pre-loaded config to avoid N+1 queries
         const estimatedCredits = await this.calculateCost(
           distances.total,
           workersCount,
+          pricingConfig,
         );
 
         chartersWithDistance.push({
@@ -198,13 +203,13 @@ export class TravelMatchingService {
   }
 
   /**
-   * Calculate cost based on distance, workers and system config
+   * Load pricing configuration from database (call once, reuse)
    */
-  async calculateCost(
-    distanceKm: number,
-    workersCount: number = 0,
-  ): Promise<number> {
-    // Get pricing configuration from system config
+  private async loadPricingConfig(): Promise<{
+    baseRate: number;
+    minimumCharge: number;
+    workerRate: number;
+  }> {
     const configs = await this.prisma.systemConfig.findMany({
       where: {
         key: {
@@ -228,16 +233,31 @@ export class TravelMatchingService {
       }
     }
 
+    return { baseRate, minimumCharge, workerRate };
+  }
+
+  /**
+   * Calculate cost based on distance, workers and pricing config
+   * @param pricingConfig - Pre-loaded pricing config (optional, will load if not provided)
+   */
+  async calculateCost(
+    distanceKm: number,
+    workersCount: number = 0,
+    pricingConfig?: { baseRate: number; minimumCharge: number; workerRate: number },
+  ): Promise<number> {
+    // Use pre-loaded config or load it (for backwards compatibility)
+    const config = pricingConfig || await this.loadPricingConfig();
+
     // Calculate distance cost
-    const distanceCost = Math.ceil(distanceKm * baseRate);
+    const distanceCost = Math.ceil(distanceKm * config.baseRate);
 
     // Calculate worker cost
-    const workerCost = workersCount * workerRate;
+    const workerCost = workersCount * config.workerRate;
 
     // Total cost
     const totalCost = distanceCost + workerCost;
 
-    return Math.max(totalCost, minimumCharge);
+    return Math.max(totalCost, config.minimumCharge);
   }
 
   /**
@@ -402,10 +422,6 @@ export class TravelMatchingService {
           where: { id: matchId },
           data: { conversationId: conversation.id },
         });
-
-        console.log(
-          `✅ Conversación creada y guardada: ${conversation.id} para el match ${matchId}`,
-        );
       } catch (error) {
         console.error(
           `❌ Falló la creación automática de la conversación para el match ${matchId}`,
