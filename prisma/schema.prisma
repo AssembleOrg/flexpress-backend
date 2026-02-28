@@ -30,6 +30,7 @@ model User {
   originAddress         String?   // Human-readable address (e.g., "St Martin 425, Buenos Aires")
   originLatitude        String?   // Charter's fixed starting location
   originLongitude       String?   // Charter's fixed starting location
+  pricePerKm            Float?    // Precio informativo por km configurado por el charter
 
   // Charter verification (default verified so existing users are not affected)
   verificationStatus    VerificationStatus @default(verified)
@@ -55,6 +56,8 @@ model User {
   messagesSent          Message[] @relation("SentMessages")
   reportsMade           Report[] @relation("ReportsMade")
   reportsReceived       Report[] @relation("ReportsReceived")
+  userDocuments         UserDocument[]
+  vehicles              Vehicle[]
 
   @@map("users")
 }
@@ -333,4 +336,96 @@ enum VerificationStatus {
   pending         // New charter awaiting validation
   verified        // Admin approved, can operate
   rejected        // Admin rejected
+}
+
+// ─── New: Documents & Vehicles ───────────────────────────────────────────────
+
+model UserDocument {
+  id               String              @id @default(cuid())
+  userId           String
+  type             UserDocumentType
+  side             DocumentSide?
+  fileUrl          String
+  status           DocumentReviewStatus @default(pending)
+  rejectionReason  String?
+  reviewedAt       DateTime?
+  reviewedBy       String?
+  uploadedAt       DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  deletedAt        DateTime?
+
+  user             User                @relation(fields: [userId], references: [id])
+
+  @@map("user_documents")
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+}
+
+model Vehicle {
+  id                 String              @id @default(cuid())
+  charterId          String
+  plate              String
+  brand              String?
+  model              String?
+  year               Int?
+  alias              String?
+  isEnabled          Boolean             @default(false)
+  verificationStatus VerificationStatus  @default(pending)
+  rejectionReason    String?
+  verifiedAt         DateTime?
+  verifiedBy         String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  deletedAt          DateTime?
+
+  charter            User                @relation(fields: [charterId], references: [id])
+  documents          VehicleDocument[]
+
+  @@map("vehicles")
+  @@index([charterId])
+}
+
+model VehicleDocument {
+  id               String               @id @default(cuid())
+  vehicleId        String
+  type             VehicleDocumentType
+  fileUrl          String
+  status           DocumentReviewStatus  @default(pending)
+  rejectionReason  String?
+  reviewedAt       DateTime?
+  reviewedBy       String?
+  expiresAt        DateTime?
+  uploadedAt       DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  deletedAt        DateTime?
+
+  vehicle          Vehicle              @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@map("vehicle_documents")
+  @@index([vehicleId])
+  @@index([type])
+  @@index([status])
+}
+
+enum DocumentReviewStatus {
+  pending
+  approved
+  rejected
+}
+
+enum DocumentSide {
+  front
+  back
+}
+
+enum UserDocumentType {
+  dni
+}
+
+enum VehicleDocumentType {
+  foto
+  cedula
+  seguro
+  vtv
 }

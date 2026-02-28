@@ -15,6 +15,8 @@ import { TravelMatchingModule } from './travel-matching/travel-matching.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { ReportsModule } from './reports/reports.module';
+import { DocumentsModule } from './documents/documents.module';
+import { VehiclesModule } from './vehicles/vehicles.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 // import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { RequestLoggerInterceptor } from './common/interceptors/request-logger.interceptor';
@@ -55,6 +57,8 @@ import configuration from './config/configuration';
     FeedbackModule,
     ConversationsModule,
     ReportsModule,
+    DocumentsModule,
+    VehiclesModule,
   ],
   controllers: [AppController],
   providers: [
