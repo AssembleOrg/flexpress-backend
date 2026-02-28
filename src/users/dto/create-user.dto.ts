@@ -50,4 +50,10 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   originLongitude?: string;
+
+  // Precio por km del charter
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  pricePerKm?: number;
 } 

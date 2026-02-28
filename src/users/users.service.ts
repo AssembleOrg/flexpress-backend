@@ -152,6 +152,14 @@ export class UsersService {
         documentationBackUrl: true,
         number: true,
         avatar: true,
+        originAddress: true,
+        originLatitude: true,
+        originLongitude: true,
+        verificationStatus: true,
+        rejectionReason: true,
+        verifiedAt: true,
+        verifiedBy: true,
+        pricePerKm: true,
         createdAt: true,
         updatedAt: true,
         deletedAt: true,
@@ -260,7 +268,7 @@ export class UsersService {
     return updatedCharter as UserResponseDto;
   }
 
-  async findPendingCharters(): Promise<UserResponseDto[]> {
+  async findPendingCharters(): Promise<any[]> {
     const charters = await this.prisma.user.findMany({
       where: {
         role: 'charter',
@@ -283,10 +291,47 @@ export class UsersService {
         createdAt: true,
         updatedAt: true,
         deletedAt: true,
+        userDocuments: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            type: true,
+            side: true,
+            fileUrl: true,
+            status: true,
+            rejectionReason: true,
+            uploadedAt: true,
+          },
+        },
+        vehicles: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            plate: true,
+            brand: true,
+            model: true,
+            year: true,
+            alias: true,
+            isEnabled: true,
+            verificationStatus: true,
+            rejectionReason: true,
+            documents: {
+              where: { deletedAt: null },
+              select: {
+                id: true,
+                type: true,
+                fileUrl: true,
+                status: true,
+                rejectionReason: true,
+                uploadedAt: true,
+              },
+            },
+          },
+        },
       },
       orderBy: { createdAt: 'asc' },
     });
 
-    return charters as UserResponseDto[];
+    return charters;
   }
 } 

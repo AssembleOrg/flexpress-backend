@@ -170,7 +170,7 @@ export class UsersController {
   }
 
   @Get('all')
-  @ApiOperation({ summary: 'Get all users without pagination' })
+  @ApiOperation({ summary: 'Get all users without pagination (admin/subadmin only)' })
   @ApiResponse({
     status: 200,
     description: 'Users retrieved successfully',
@@ -205,7 +205,15 @@ export class UsersController {
       }
     }
   })
-  async findAllWithoutPagination(): Promise<UserResponseDto[]> {
+  @ApiResponse({
+    status: 403,
+    description: 'User is not authorized to view all users',
+  })
+  async findAllWithoutPagination(@Request() req): Promise<UserResponseDto[]> {
+    const userRole = req.user?.role;
+    if (userRole !== 'admin' && userRole !== 'subadmin') {
+      throw new ForbiddenException('Solo administradores pueden ver todos los usuarios');
+    }
     return this.usersService.findWithoutPagination();
   }
 
@@ -341,23 +349,38 @@ export class UsersController {
   async update(
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
+    @Request() req,
   ): Promise<UserResponseDto> {
+    // Validar ownership: admin/subadmin o el mismo usuario
+    const userRole = req.user?.role;
+    if (!['admin', 'subadmin'].includes(userRole) && id !== req.user.id) {
+      throw new ForbiddenException('No tienes permiso para modificar este usuario');
+    }
     return this.usersService.update(id, updateUserDto);
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete a user (soft delete)' })
+  @ApiOperation({ summary: 'Delete a user (admin/subadmin only)' })
   @ApiParam({ name: 'id', description: 'User ID' })
   @ApiResponse({
     status: 200,
     description: 'User deleted successfully',
   })
   @ApiResponse({
+    status: 403,
+    description: 'Not authorized to delete users',
+  })
+  @ApiResponse({
     status: 404,
     description: 'User not found',
   })
   @Auditory('User')
-  async remove(@Param('id') id: string): Promise<void> {
+  async remove(@Param('id') id: string, @Request() req): Promise<void> {
+    // Solo admin/subadmin puede eliminar usuarios
+    const userRole = req.user?.role;
+    if (!['admin', 'subadmin'].includes(userRole)) {
+      throw new ForbiddenException('Solo administradores pueden eliminar usuarios');
+    }
     return this.usersService.remove(id);
   }
 

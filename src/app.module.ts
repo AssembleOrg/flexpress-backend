@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -14,6 +15,8 @@ import { TravelMatchingModule } from './travel-matching/travel-matching.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { ReportsModule } from './reports/reports.module';
+import { DocumentsModule } from './documents/documents.module';
+import { VehiclesModule } from './vehicles/vehicles.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 // import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { RequestLoggerInterceptor } from './common/interceptors/request-logger.interceptor';
@@ -27,6 +30,23 @@ import configuration from './config/configuration';
       load: [configuration],
     }),
     ScheduleModule.forRoot(),
+    ThrottlerModule.forRoot([
+      {
+        name: 'short',
+        ttl: 1000,
+        limit: 3,
+      },
+      {
+        name: 'medium',
+        ttl: 10000,
+        limit: 20,
+      },
+      {
+        name: 'long',
+        ttl: 60000,
+        limit: 100,
+      },
+    ]),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -37,11 +57,17 @@ import configuration from './config/configuration';
     FeedbackModule,
     ConversationsModule,
     ReportsModule,
+    DocumentsModule,
+    VehiclesModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
     GeolocationService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     {
       provide: APP_INTERCEPTOR,
       useClass: ResponseInterceptor,

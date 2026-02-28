@@ -63,4 +63,10 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   rejectionReason?: string;
+
+  // Precio por km del charter
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  pricePerKm?: number;
 } 
