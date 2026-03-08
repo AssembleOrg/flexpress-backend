@@ -37,6 +37,8 @@ export interface AvailableCharter {
   distanceToPickup: number;
   totalDistance: number;
   estimatedCredits: number;
+  vehicleBrand?: string | null;
+  vehicleModel?: string | null;
 }
 
 @Injectable()
@@ -148,7 +150,11 @@ export class TravelMatchingService {
         },
       },
       include: {
-        charterAvailability: true,
+        charterAvailability: {
+          include: {
+            vehicle: true,
+          },
+        },
       },
     });
 
@@ -192,6 +198,8 @@ export class TravelMatchingService {
           distanceToPickup: distances.charterToPickup,
           totalDistance: distances.total,
           estimatedCredits,
+          vehicleBrand: charter.charterAvailability?.vehicle?.brand ?? null,
+          vehicleModel: charter.charterAvailability?.vehicle?.model ?? null,
         });
       }
     }
@@ -769,10 +777,12 @@ export class TravelMatchingService {
       create: {
         charterId,
         isAvailable: dto.isAvailable,
+        vehicleId: dto.vehicleId ?? null,
         lastToggledAt: nowInBuenosAires().toJSDate(),
       },
       update: {
         isAvailable: dto.isAvailable,
+        vehicleId: dto.vehicleId ?? null,
         lastToggledAt: nowInBuenosAires().toJSDate(),
       },
     });

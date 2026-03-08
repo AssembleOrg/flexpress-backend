@@ -136,12 +136,14 @@ model CharterAvailability {
   id              String   @id @default(cuid())
   charterId       String   @unique
   isAvailable     Boolean  @default(false)
+  vehicleId       String?  @unique
   lastToggledAt   DateTime @default(now())
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   // Relations
   charter         User     @relation(fields: [charterId], references: [id])
+  vehicle         Vehicle? @relation(fields: [vehicleId], references: [id])
 
   @@map("charter_availability")
 }
@@ -381,6 +383,7 @@ model Vehicle {
 
   charter            User                @relation(fields: [charterId], references: [id])
   documents          VehicleDocument[]
+  charterAvailability CharterAvailability?
 
   @@map("vehicles")
   @@index([charterId])
