@@ -347,7 +347,7 @@ export class TravelMatchingService {
       data: {
         charterId: dto.charterId,
         status: 'pending',
-        distanceKm: distances.total,
+        distanceKm: distances.pickupToDestination,
         estimatedCredits,
       },
       include: {
@@ -368,6 +368,18 @@ export class TravelMatchingService {
             number: true,
             avatar: true,
             originAddress: true,
+            charterAvailability: {
+              select: {
+                vehicle: {
+                  select: {
+                    brand: true,
+                    model: true,
+                    plate: true,
+                    year: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -595,6 +607,18 @@ export class TravelMatchingService {
             number: true,
             avatar: true,
             originAddress: true,
+            charterAvailability: {
+              select: {
+                vehicle: {
+                  select: {
+                    brand: true,
+                    model: true,
+                    plate: true,
+                    year: true,
+                  },
+                },
+              },
+            },
           },
         },
         trip: true,
