@@ -37,8 +37,11 @@ export interface AvailableCharter {
   distanceToPickup: number;
   totalDistance: number;
   estimatedCredits: number;
+  pricePerKm: number | null;
   vehicleBrand?: string | null;
   vehicleModel?: string | null;
+  vehiclePlate?: string | null;
+  vehicleYear?: number | null;
 }
 
 @Injectable()
@@ -145,8 +148,12 @@ export class TravelMatchingService {
         verificationStatus: 'verified', // Only verified charters can appear in searches
         originLatitude: { not: null },
         originLongitude: { not: null },
+        credits: { gte: 2 }, // Solo charters con créditos suficientes para aceptar
         charterAvailability: {
           isAvailable: true,
+          vehicle: {
+            verificationStatus: 'verified',
+          },
         },
       },
       include: {
@@ -198,8 +205,11 @@ export class TravelMatchingService {
           distanceToPickup: distances.charterToPickup,
           totalDistance: distances.total,
           estimatedCredits,
+          pricePerKm: charter.pricePerKm ?? null,
           vehicleBrand: charter.charterAvailability?.vehicle?.brand ?? null,
           vehicleModel: charter.charterAvailability?.vehicle?.model ?? null,
+          vehiclePlate: charter.charterAvailability?.vehicle?.plate ?? null,
+          vehicleYear: charter.charterAvailability?.vehicle?.year ?? null,
         });
       }
     }
@@ -391,11 +401,46 @@ export class TravelMatchingService {
       );
     }
 
-    const newStatus = accept ? 'accepted' : 'rejected';
+    if (accept) {
+      // Verificar créditos suficientes antes de aceptar
+      if (!match.charter || match.charter.credits < 2) {
+        throw new BadRequestException(
+          'Necesitás al menos 2 créditos para aceptar esta solicitud',
+        );
+      }
+      if (!match.user || match.user.credits < 1) {
+        throw new BadRequestException(
+          'El cliente no tiene créditos suficientes para completar la solicitud',
+        );
+      }
 
-    const updatedMatch = await this.prisma.travelMatch.update({
+      // TX atómica: descontar créditos + actualizar estado del match
+      await this.prisma.$transaction(async (tx) => {
+        await tx.user.update({
+          where: { id: charterId },
+          data: { credits: { decrement: 2 } },
+        });
+        await tx.user.update({
+          where: { id: match.userId },
+          data: { credits: { decrement: 1 } },
+        });
+        await tx.travelMatch.update({
+          where: { id: matchId },
+          data: { status: 'accepted' },
+        });
+      });
+    }
+
+    // Si fue rechazado, actualizar el estado ahora (el aceptado ya se hizo en la TX)
+    if (!accept) {
+      await this.prisma.travelMatch.update({
+        where: { id: matchId },
+        data: { status: 'rejected' },
+      });
+    }
+
+    const updatedMatch = await this.prisma.travelMatch.findUnique({
       where: { id: matchId },
-      data: { status: newStatus },
       include: {
         user: {
           select: {
@@ -436,6 +481,10 @@ export class TravelMatchingService {
           error,
         );
       }
+    }
+
+    if (!updatedMatch) {
+      throw new NotFoundException('Búsqueda no encontrada');
     }
 
     // Notificar al cliente (user) sobre el cambio de estado.
@@ -488,33 +537,8 @@ export class TravelMatchingService {
       throw new BadRequestException('Ya existe un viaje para esta búsqueda');
     }
 
-    // Verify user has enough credits
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
-    }
-
-    if (user.credits < (match.estimatedCredits || 0)) {
-      throw new BadRequestException(
-        `Créditos insuficientes. Requeridos: ${match.estimatedCredits}, Disponibles: ${user.credits}`,
-      );
-    }
-
     // Create trip and update match in a transaction
     const result = await this.prisma.$transaction(async (tx) => {
-      // Deduct credits
-      await tx.user.update({
-        where: { id: userId },
-        data: {
-          credits: {
-            decrement: match.estimatedCredits || 0,
-          },
-        },
-      });
-
       // Create trip
       const trip = await tx.trip.create({
         data: {
@@ -771,6 +795,43 @@ export class TravelMatchingService {
       );
     }
 
+    if (dto.isAvailable && charter.credits < 2) {
+      throw new BadRequestException(
+        'Necesitás al menos 2 créditos para activar tu disponibilidad',
+      );
+    }
+
+    if (dto.isAvailable && dto.vehicleId) {
+      const vehicle = await this.prisma.vehicle.findUnique({
+        where: { id: dto.vehicleId },
+      });
+
+      if (!vehicle || vehicle.charterId !== charterId) {
+        throw new NotFoundException('Vehículo no encontrado');
+      }
+
+      if (vehicle.verificationStatus !== 'verified') {
+        throw new BadRequestException(
+          'El vehículo seleccionado no está verificado. Solo podés activarte con un vehículo aprobado.',
+        );
+      }
+    }
+
+    if (dto.isAvailable && !dto.vehicleId) {
+      const verifiedVehicle = await this.prisma.vehicle.findFirst({
+        where: {
+          charterId,
+          verificationStatus: 'verified',
+        },
+      });
+
+      if (!verifiedVehicle) {
+        throw new BadRequestException(
+          'Necesitás al menos un vehículo verificado para activarte.',
+        );
+      }
+    }
+
     // Upsert availability
     const availability = await this.prisma.charterAvailability.upsert({
       where: { charterId },
@@ -808,6 +869,7 @@ export class TravelMatchingService {
             originAddress: true,
             originLatitude: true,
             originLongitude: true,
+            credits: true,
           },
         },
       },
@@ -822,6 +884,37 @@ export class TravelMatchingService {
           message: 'Disponibilidad no configurada',
         },
       };
+    }
+
+    // Auto-correct: if charter has insufficient credits but is marked available, reset it
+    if (availability.isAvailable && availability.charter.credits < 2) {
+      await this.prisma.charterAvailability.update({
+        where: { charterId },
+        data: { isAvailable: false },
+      });
+      return {
+        success: true,
+        data: { ...availability, isAvailable: false },
+      };
+    }
+
+    // Auto-correct: if the associated vehicle is no longer verified, reset availability
+    if (availability.isAvailable && availability.vehicleId) {
+      const vehicle = await this.prisma.vehicle.findUnique({
+        where: { id: availability.vehicleId },
+        select: { verificationStatus: true },
+      });
+
+      if (!vehicle || vehicle.verificationStatus !== 'verified') {
+        await this.prisma.charterAvailability.update({
+          where: { charterId },
+          data: { isAvailable: false },
+        });
+        return {
+          success: true,
+          data: { ...availability, isAvailable: false },
+        };
+      }
     }
 
     return {

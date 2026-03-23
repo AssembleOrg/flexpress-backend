@@ -402,28 +402,11 @@ export class TripsService {
       throw new NotFoundException('El transportista aún no ha finalizado el viaje');
     }
 
-    // Get estimated credits from travel match
-    const estimatedCredits = trip.travelMatch?.estimatedCredits || 0;
-
-    // Transfer credits: deduct from user, add to charter
-    await this.prisma.$transaction([
-      // Update trip status to completed
-      this.prisma.trip.update({
-        where: { id: tripId },
-        data: { status: 'completed' },
-      }),
-      // Deduct credits from user (already reserved when trip was created)
-      // Credits were already deducted when trip was created, so no need to deduct again
-      // Add credits to charter
-      this.prisma.user.update({
-        where: { id: trip.charterId },
-        data: {
-          credits: {
-            increment: estimatedCredits,
-          },
-        },
-      }),
-    ]);
+    // Actualizar estado del viaje a completado
+    await this.prisma.trip.update({
+      where: { id: tripId },
+      data: { status: 'completed' },
+    });
 
     // Emit WebSocket event to notify both users that trip is completed
     this.gateway.server.to(trip.userId).emit('trip:completed', {
