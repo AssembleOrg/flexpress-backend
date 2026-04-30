@@ -1,14 +1,19 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTripDto, UpdateTripDto, TripResponseDto } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { TravelMatchingGateway } from '../travel-matching/travel-matching.gateway';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationPriority } from '@prisma/client';
 
 @Injectable()
 export class TripsService {
+  private readonly logger = new Logger(TripsService.name);
+
   constructor(
     private prisma: PrismaService,
     private gateway: TravelMatchingGateway,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(createTripDto: CreateTripDto): Promise<TripResponseDto> {
@@ -362,16 +367,30 @@ export class TripsService {
     });
 
     // Emit WebSocket event to notify both users
-    this.gateway.server.to(trip.userId).emit('trip:completed', {
+    this.gateway.server.to(`user:${trip.userId}`).emit('trip:completed', {
       tripId,
       matchId: updatedTrip.travelMatch?.id,
       status: 'charter_completed',
     });
-    this.gateway.server.to(trip.charterId).emit('trip:completed', {
+    this.gateway.server.to(`user:${trip.charterId}`).emit('trip:completed', {
       tripId,
       matchId: updatedTrip.travelMatch?.id,
       status: 'charter_completed',
     });
+
+    // Notificar al cliente que el charter marcó el viaje como completado
+    try {
+      await this.notificationsService.createOrUpdate({
+        userId: trip.userId,
+        type: 'trip_charter_completed',
+        title: 'El transportista terminó el viaje',
+        body: 'Por favor confirmá la finalización del viaje desde tu panel.',
+        priority: NotificationPriority.HIGH,
+        data: { actionUrl: '/client/dashboard', tripId },
+      });
+    } catch (err) {
+      this.logger.error(`Notificación trip_charter_completed fallida (no crítico): ${err}`);
+    }
 
     return updatedTrip as TripResponseDto;
   }
@@ -409,16 +428,30 @@ export class TripsService {
     });
 
     // Emit WebSocket event to notify both users that trip is completed
-    this.gateway.server.to(trip.userId).emit('trip:completed', {
+    this.gateway.server.to(`user:${trip.userId}`).emit('trip:completed', {
       tripId,
       matchId: trip.travelMatch?.id,
       status: 'completed',
     });
-    this.gateway.server.to(trip.charterId).emit('trip:completed', {
+    this.gateway.server.to(`user:${trip.charterId}`).emit('trip:completed', {
       tripId,
       matchId: trip.travelMatch?.id,
       status: 'completed',
     });
+
+    // Notificar al charter que el cliente confirmó la finalización
+    try {
+      await this.notificationsService.createOrUpdate({
+        userId: trip.charterId,
+        type: 'trip_completed',
+        title: 'Viaje confirmado',
+        body: 'El cliente confirmó la finalización del viaje.',
+        priority: NotificationPriority.LOW,
+        data: { actionUrl: `/driver/trips/${tripId}`, tripId },
+      });
+    } catch (err) {
+      this.logger.error(`Notificación trip_completed fallida (no crítico): ${err}`);
+    }
 
     // Fetch updated trip to return
     const updatedTrip = await this.prisma.trip.findUnique({

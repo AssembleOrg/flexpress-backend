@@ -7,8 +7,9 @@ import {
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { WebSocketGateway } from '@nestjs/websockets';
+import { JwtService } from '@nestjs/jwt';
 
 interface ConversationRoom {
   conversationId: string;
@@ -17,6 +18,7 @@ interface ConversationRoom {
   sockets: Set<string>; // socket IDs in this room
 }
 
+@Injectable()
 @WebSocketGateway({
   namespace: '/conversations',
 })
@@ -30,28 +32,51 @@ export class TravelMatchingGateway
   private rooms: Map<string, ConversationRoom> = new Map();
   private userSockets: Map<string, Set<string>> = new Map(); // userId -> Set<socketId>
 
+  constructor(private readonly jwtService: JwtService) {}
+
   handleConnection(client: Socket) {
-    this.logger.log(`Client connected: ${client.id}`);
+    const token = client.handshake.auth?.token as string | undefined;
+    if (!token) {
+      this.logger.warn(`Socket ${client.id} sin token — desconectando`);
+      client.disconnect();
+      return;
+    }
+    try {
+      const payload = this.jwtService.verify<{ sub: string }>(token);
+      const userId = payload.sub;
+      (client as any).userId = userId;
+
+      if (!this.userSockets.has(userId)) {
+        this.userSockets.set(userId, new Set());
+      }
+      this.userSockets.get(userId)!.add(client.id);
+
+      // Room personal — permite emitir a un usuario sin iterar el Map
+      client.join(`user:${userId}`);
+      this.logger.log(`Socket ${client.id} conectado → usuario ${userId}`);
+    } catch {
+      this.logger.warn(`Socket ${client.id} token inválido — desconectando`);
+      client.disconnect();
+    }
   }
 
   handleDisconnect(client: Socket) {
-    this.logger.log(`Client disconnected: ${client.id}`);
-
-    // Remove from all rooms
+    const userId = (client as any).userId as string | undefined;
+    if (userId) {
+      const sockets = this.userSockets.get(userId);
+      if (sockets) {
+        sockets.delete(client.id);
+        if (sockets.size === 0) this.userSockets.delete(userId);
+      }
+    }
+    // Limpiar rooms de conversación
     this.rooms.forEach((room, conversationId) => {
       room.sockets.delete(client.id);
       if (room.sockets.size === 0) {
         this.rooms.delete(conversationId);
       }
     });
-
-    // Remove from user sockets map
-    for (const [userId, sockets] of this.userSockets.entries()) {
-      sockets.delete(client.id);
-      if (sockets.size === 0) {
-        this.userSockets.delete(userId);
-      }
-    }
+    this.logger.log(`Socket ${client.id} desconectado`);
   }
 
   @SubscribeMessage('join-conversation')
@@ -225,6 +250,15 @@ export class TravelMatchingGateway
         timestamp: new Date().toISOString(),
       });
   }
+  /**
+   * Emite un evento a todos los sockets de un usuario.
+   * Usa el room personal `user:{userId}` creado en handleConnection.
+   * Prerequisito para el sistema de notificaciones.
+   */
+  notifyUser(userId: string, event: string, data: any) {
+    this.server.to(`user:${userId}`).emit(event, data);
+  }
+
   public notifyMatchUpdate(
     userId: string,
     matchData: { matchId: string; status: string },

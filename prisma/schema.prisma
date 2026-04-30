@@ -58,6 +58,8 @@ model User {
   reportsReceived       Report[] @relation("ReportsReceived")
   userDocuments         UserDocument[]
   vehicles              Vehicle[]
+  notifications         Notification[]
+  pushSubscriptions     PushSubscription[]
 
   @@map("users")
 }
@@ -431,4 +433,44 @@ enum VehicleDocumentType {
   cedula
   seguro
   vtv
+}
+
+enum NotificationPriority {
+  HIGH
+  LOW
+}
+
+model Notification {
+  id         String               @id @default(cuid())
+  userId     String
+  type       String
+  title      String
+  body       String
+  priority   NotificationPriority @default(LOW)
+  isRead     Boolean              @default(false)
+  readAt     DateTime?
+  data       Json?
+  dedupeKey  String?              @db.VarChar(255)
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead, createdAt(sort: Desc)])
+  @@index([userId, dedupeKey])
+  @@map("notifications")
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }

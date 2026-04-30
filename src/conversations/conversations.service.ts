@@ -12,6 +12,8 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { SendMessageDto } from './dto';
 import { addHours, nowInBuenosAires } from '../common/utils/date.util';
 import { TravelMatchingGateway } from '../travel-matching/travel-matching.gateway';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationPriority } from '@prisma/client';
 
 @Injectable()
 export class ConversationsService {
@@ -21,6 +23,7 @@ export class ConversationsService {
     private prisma: PrismaService,
     @Inject(forwardRef(() => TravelMatchingGateway))
     private gateway: TravelMatchingGateway,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -109,6 +112,7 @@ export class ConversationsService {
       include: {
         user: true,
         charter: true,
+        travelMatch: { select: { id: true } },
       },
     });
 
@@ -159,6 +163,48 @@ export class ConversationsService {
     this.gateway.server
       .to(`conversation:${conversationId}`)
       .emit('new-message', message);
+
+    // Notificar al receptor solo si no está activo en la sala de conversación
+    const recipientId =
+      senderId === conversation.userId
+        ? conversation.charterId
+        : conversation.userId;
+
+    const roomSockets = await this.gateway.server
+      .in(`conversation:${conversationId}`)
+      .fetchSockets();
+    const recipientInRoom = roomSockets.some(
+      (s) => (s.data as { userId?: string }).userId === recipientId,
+    );
+
+    if (!recipientInRoom) {
+      const senderName =
+        senderId === conversation.userId
+          ? conversation.user.name
+          : conversation.charter.name;
+      const matchId = conversation.travelMatch?.id;
+      const recipientIsClient = recipientId === conversation.userId;
+      const actionUrl = matchId
+        ? recipientIsClient
+          ? `/client/trips/matching/${matchId}`
+          : `/driver/trips/matching/${matchId}`
+        : recipientIsClient
+          ? '/client/dashboard'
+          : '/driver/dashboard';
+      try {
+        await this.notificationsService.createOrUpdate({
+          userId: recipientId,
+          type: 'new_message',
+          title: `Mensaje de ${senderName}`,
+          body: dto.content.length > 60 ? `${dto.content.slice(0, 60)}…` : dto.content,
+          priority: NotificationPriority.HIGH,
+          data: { actionUrl, conversationId, matchId },
+          dedupeKey: `new_message:conversation:${conversationId}`,
+        });
+      } catch (err) {
+        this.logger.error(`Notificación new_message fallida (no crítico): ${err}`);
+      }
+    }
 
     return {
       success: true,

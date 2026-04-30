@@ -17,6 +17,8 @@ import { ConversationsModule } from './conversations/conversations.module';
 import { ReportsModule } from './reports/reports.module';
 import { DocumentsModule } from './documents/documents.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { PushModule } from './push/push.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 // import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { RequestLoggerInterceptor } from './common/interceptors/request-logger.interceptor';
@@ -44,7 +46,7 @@ import configuration from './config/configuration';
       {
         name: 'long',
         ttl: 60000,
-        limit: 100,
+        limit: 500,
       },
     ]),
     PrismaModule,
@@ -59,6 +61,8 @@ import configuration from './config/configuration';
     ReportsModule,
     DocumentsModule,
     VehiclesModule,
+    NotificationsModule,
+    PushModule,
   ],
   controllers: [AppController],
   providers: [

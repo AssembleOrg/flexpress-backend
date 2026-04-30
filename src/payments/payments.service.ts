@@ -1,11 +1,18 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentDto, UpdatePaymentDto, PaymentResponseDto } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationPriority } from '@prisma/client';
 
 @Injectable()
 export class PaymentsService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(PaymentsService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async create(createPaymentDto: CreatePaymentDto): Promise<PaymentResponseDto> {
     const payment = await this.prisma.payment.create({
@@ -177,6 +184,20 @@ export class PaymentsService {
       return updatedPayment;
     });
 
+    try {
+      await this.notificationsService.createOrUpdate({
+        userId: payment.userId,
+        type: 'payment_approved',
+        title: '¡Recarga aprobada!',
+        body: `Tu recarga de ${payment.credits} créditos fue aprobada.`,
+        priority: NotificationPriority.HIGH,
+        data: { actionUrl: '/client/dashboard' },
+        dedupeKey: `payment_approved:payment:${paymentId}`,
+      });
+    } catch (err) {
+      this.logger.error(`Notificación payment_approved fallida (no crítico): ${err}`);
+    }
+
     return result as PaymentResponseDto;
   }
 
@@ -209,6 +230,19 @@ export class PaymentsService {
         },
       },
     });
+
+    try {
+      await this.notificationsService.createOrUpdate({
+        userId: payment.userId,
+        type: 'payment_rejected',
+        title: 'Recarga rechazada',
+        body: `Tu recarga de ${payment.credits} créditos fue rechazada.`,
+        priority: NotificationPriority.HIGH,
+        data: { actionUrl: '/client/payments' },
+      });
+    } catch (err) {
+      this.logger.error(`Notificación payment_rejected fallida (no crítico): ${err}`);
+    }
 
     return updatedPayment as PaymentResponseDto;
   }

@@ -16,4 +16,9 @@ export default () => ({
     publicKey: process.env.MERCADOPAGO_PUBLIC_KEY,
   },
   timezone: process.env.TZ || 'America/Argentina/Buenos_Aires',
+  vapid: {
+    publicKey: process.env.VAPID_PUBLIC_KEY,
+    privateKey: process.env.VAPID_PRIVATE_KEY,
+    subject: process.env.VAPID_SUBJECT || 'mailto:admin@flexpress.com',
+  },
 }); 

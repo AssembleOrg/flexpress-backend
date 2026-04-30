@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -24,6 +25,8 @@ import {
 } from '../common/utils/date.util';
 import { TravelMatchingGateway } from './travel-matching.gateway';
 import { ConversationsService } from 'src/conversations/conversations.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationPriority } from '@prisma/client';
 
 export interface AvailableCharter {
   charterId: string;
@@ -46,10 +49,13 @@ export interface AvailableCharter {
 
 @Injectable()
 export class TravelMatchingService {
+  private readonly logger = new Logger(TravelMatchingService.name);
+
   constructor(
     private prisma: PrismaService,
     private readonly travelMatchingGateway: TravelMatchingGateway,
     private readonly conversationsService: ConversationsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -385,6 +391,20 @@ export class TravelMatchingService {
       },
     });
 
+    // Notificar al charter que fue seleccionado
+    try {
+      await this.notificationsService.createOrUpdate({
+        userId: dto.charterId,
+        type: 'match_selected',
+        title: 'Nuevo pedido de viaje',
+        body: `Un cliente te seleccionó para un viaje. ¡Revisá y respondé!`,
+        priority: NotificationPriority.HIGH,
+        data: { actionUrl: `/driver/trips/matching/${updatedMatch.id}`, matchId: updatedMatch.id },
+      });
+    } catch (err) {
+      this.logger.error(`Notificación match_selected fallida (no crítico): ${err}`);
+    }
+
     return updatedMatch;
   }
 
@@ -509,6 +529,22 @@ export class TravelMatchingService {
         matchId: updatedMatch.id,
         status: updatedMatch.status,
       });
+
+      const isAccepted = updatedMatch.status === 'accepted';
+      try {
+        await this.notificationsService.createOrUpdate({
+          userId: updatedMatch.userId,
+          type: isAccepted ? 'match_accepted' : 'match_rejected',
+          title: isAccepted ? '¡Tu viaje fue aceptado!' : 'Viaje rechazado',
+          body: isAccepted
+            ? `${updatedMatch.charter?.name ?? 'El chófer'} aceptó tu solicitud. Ya podés chatear.`
+            : `${updatedMatch.charter?.name ?? 'El chófer'} rechazó tu solicitud. Podés buscar otro.`,
+          priority: NotificationPriority.HIGH,
+          data: { actionUrl: isAccepted ? `/client/trips/matching/${updatedMatch.id}` : '/client/dashboard', matchId: updatedMatch.id },
+        });
+      } catch (err) {
+        this.logger.error(`Notificación ${updatedMatch.status} fallida (no crítico): ${err}`);
+      }
     }
 
     return updatedMatch;

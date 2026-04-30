@@ -3,10 +3,12 @@ import { TripsService } from './trips.service';
 import { TripsController } from './trips.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TravelMatchingModule } from '../travel-matching/travel-matching.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     PrismaModule,
+    NotificationsModule,
     forwardRef(() => TravelMatchingModule),
   ],
   controllers: [TripsController],
