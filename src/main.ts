@@ -3,6 +3,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import * as compression from 'compression';
 import * as morgan from 'morgan';
 import { AppModule } from './app.module';
 import { SocketIoAdapter } from './common/adapters/socket-io.adapter';
@@ -22,6 +23,12 @@ async function bootstrap() {
       crossOriginEmbedderPolicy: false,
     }),
   );
+
+  // gzip — reduce payload de respuestas JSON 70-85%. Threshold 1KB,
+  // salta content-types ya comprimidos. Va antes de morgan/CORS/rutas
+  // para que envuelva todas las responses HTTP. NO afecta a Socket.IO
+  // (esos paquetes van por su propio transport).
+  app.use(compression());
 
   // Trust proxy - needed to get real IP behind reverse proxy/load balancer
   const expressApp = app.getHttpAdapter().getInstance();
