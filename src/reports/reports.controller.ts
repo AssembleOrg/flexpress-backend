@@ -8,6 +8,7 @@ import {
   Query,
   UseGuards,
   Request,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -35,7 +36,8 @@ export class ReportsController {
   @ApiOperation({ summary: 'Obtener todos los reportes (Admin)' })
   @ApiQuery({ name: 'status', required: false })
   @ApiResponse({ status: 200, description: 'Reportes obtenidos exitosamente' })
-  async getAllReports(@Query('status') status?: string) {
+  async getAllReports(@Request() req: any, @Query('status') status?: string) {
+    this.assertAdmin(req);
     return this.reportsService.getAllReports(status);
   }
 
@@ -71,7 +73,14 @@ export class ReportsController {
     @Request() req: any,
     @Body() dto: UpdateReportDto
   ) {
+    this.assertAdmin(req);
     return this.reportsService.updateReport(reportId, req.user.id, dto);
+  }
+
+  private assertAdmin(req: any) {
+    if (!['admin', 'subadmin'].includes(req.user.role)) {
+      throw new ForbiddenException('Solo administradores');
+    }
   }
 }
 

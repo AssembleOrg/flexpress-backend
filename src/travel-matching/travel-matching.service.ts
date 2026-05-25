@@ -12,6 +12,7 @@ import {
   ToggleAvailabilityDto,
   UpdateCharterOriginDto,
 } from './dto';
+import { RespondToMatchDto } from './dto/respond-to-match.dto';
 import {
   calculateTravelDistances,
   parseCoordinates,
@@ -45,6 +46,12 @@ export interface AvailableCharter {
   vehicleModel?: string | null;
   vehiclePlate?: string | null;
   vehicleYear?: number | null;
+  driversCount: number;
+  helpersCount: number;
+  // true si el charter ya está atendiendo otro viaje (match accepted o trip
+  // pending/charter_completed). El charter sigue apareciendo en la lista, pero
+  // el frontend muestra badge "En viaje" y el botón cambia a "Consultar disponibilidad".
+  isOnTrip: boolean;
 }
 
 @Injectable()
@@ -168,6 +175,24 @@ export class TravelMatchingService {
             vehicle: true,
           },
         },
+        _count: {
+          select: {
+            charterDrivers: {
+              where: {
+                verificationStatus: 'verified',
+                deletedAt: null,
+                isEnabled: true,
+              },
+            },
+            charterHelpers: {
+              where: {
+                verificationStatus: 'verified',
+                deletedAt: null,
+                isEnabled: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -216,7 +241,39 @@ export class TravelMatchingService {
           vehicleModel: charter.charterAvailability?.vehicle?.model ?? null,
           vehiclePlate: charter.charterAvailability?.vehicle?.plate ?? null,
           vehicleYear: charter.charterAvailability?.vehicle?.year ?? null,
+          driversCount: (charter as any)._count?.charterDrivers ?? 0,
+          helpersCount: (charter as any)._count?.charterHelpers ?? 0,
+          isOnTrip: false, // se anota abajo en batch
         });
+      }
+    }
+
+    // Anotar isOnTrip: un charter está ocupado si tiene un TravelMatch
+    // 'accepted' o un Trip activo (pending/charter_completed). El charter
+    // sigue devuelto en la lista — el frontend cambia el CTA en lugar de filtrarlo.
+    // Deliberadamente NO incluimos match.status='pending' acá: pending significa
+    // que aún no respondió y podría rechazar, no que esté en viaje activo.
+    if (chartersWithDistance.length > 0) {
+      const charterIds = chartersWithDistance.map((c) => c.charterId);
+      const [acceptedMatches, activeTrips] = await Promise.all([
+        this.prisma.travelMatch.findMany({
+          where: { charterId: { in: charterIds }, status: 'accepted', deletedAt: null },
+          select: { charterId: true },
+        }),
+        this.prisma.trip.findMany({
+          where: {
+            charterId: { in: charterIds },
+            status: { in: ['pending', 'charter_completed'] },
+            deletedAt: null,
+          },
+          select: { charterId: true },
+        }),
+      ]);
+      const busyIds = new Set<string>();
+      for (const m of acceptedMatches) if (m.charterId) busyIds.add(m.charterId);
+      for (const t of activeTrips) busyIds.add(t.charterId);
+      for (const c of chartersWithDistance) {
+        c.isOnTrip = busyIds.has(c.charterId);
       }
     }
 
@@ -411,7 +468,8 @@ export class TravelMatchingService {
   /**
    * Charter accepts or rejects a match
    */
-  async respondToMatch(charterId: string, matchId: string, accept: boolean) {
+  async respondToMatch(charterId: string, matchId: string, dto: RespondToMatchDto) {
+    const accept = dto.accept;
     const match = await this.prisma.travelMatch.findUnique({
       where: { id: matchId },
       include: { user: true, charter: true },
@@ -446,7 +504,64 @@ export class TravelMatchingService {
         );
       }
 
-      // TX atómica: descontar créditos + actualizar estado del match
+      // Validar personal asignado (driverId + helperIds)
+      let driverEntity: { id: string; firstName: string; lastName: string; phone: string | null } | null = null;
+      if (dto.driverId) {
+        const driver = await this.prisma.charterDriver.findFirst({
+          where: { id: dto.driverId, charterId, deletedAt: null },
+        });
+        if (!driver) {
+          throw new BadRequestException('Conductor no encontrado o no pertenece al charter');
+        }
+        if (driver.verificationStatus !== 'verified' || !driver.isEnabled) {
+          throw new BadRequestException('El conductor seleccionado no está verificado y habilitado');
+        }
+        driverEntity = {
+          id: driver.id,
+          firstName: driver.firstName,
+          lastName: driver.lastName,
+          phone: driver.phone,
+        };
+      }
+
+      const helperEntities: Array<{ id: string; firstName: string; lastName: string }> = [];
+      if (dto.helperIds && dto.helperIds.length > 0) {
+        if (dto.helperIds.length > (match.workersCount || 0)) {
+          throw new BadRequestException(
+            `Máximo ${match.workersCount} ayudante(s) según lo solicitado por el cliente`,
+          );
+        }
+        const helpers = await this.prisma.charterHelper.findMany({
+          where: { id: { in: dto.helperIds }, charterId, deletedAt: null },
+        });
+        if (helpers.length !== dto.helperIds.length) {
+          throw new BadRequestException('Uno o más ayudantes no pertenecen al charter');
+        }
+        for (const h of helpers) {
+          if (h.verificationStatus !== 'verified' || !h.isEnabled) {
+            throw new BadRequestException(
+              `El ayudante ${h.firstName} ${h.lastName} no está verificado y habilitado`,
+            );
+          }
+          helperEntities.push({ id: h.id, firstName: h.firstName, lastName: h.lastName });
+        }
+      }
+
+      const snapshot = {
+        driver: driverEntity
+          ? {
+              id: driverEntity.id,
+              name: `${driverEntity.firstName} ${driverEntity.lastName}`.trim(),
+              phone: driverEntity.phone ?? undefined,
+            }
+          : { id: null, name: `${match.charter.name} (titular)`, phone: match.charter.number },
+        helpers: helperEntities.map((h) => ({
+          id: h.id,
+          name: `${h.firstName} ${h.lastName}`.trim(),
+        })),
+      };
+
+      // TX atómica: descontar créditos + actualizar estado + crear TripPersonnel
       await this.prisma.$transaction(async (tx) => {
         await tx.user.update({
           where: { id: charterId },
@@ -459,6 +574,14 @@ export class TravelMatchingService {
         await tx.travelMatch.update({
           where: { id: matchId },
           data: { status: 'accepted' },
+        });
+        await tx.tripPersonnel.create({
+          data: {
+            matchId,
+            driverId: driverEntity?.id ?? null,
+            helperIds: helperEntities.map((h) => h.id),
+            snapshot: snapshot as any,
+          },
         });
       });
     }
@@ -665,6 +788,7 @@ export class TravelMatchingService {
             createdAt: true,
           },
         },
+        personnel: true,
       },
     });
 
@@ -726,6 +850,7 @@ export class TravelMatchingService {
             updatedAt: true,
           },
         },
+        personnel: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -783,6 +908,7 @@ export class TravelMatchingService {
             updatedAt: true,
           },
         },
+        personnel: true,
       },
       orderBy: { createdAt: 'desc' },
     });

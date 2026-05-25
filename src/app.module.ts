@@ -17,8 +17,10 @@ import { ConversationsModule } from './conversations/conversations.module';
 import { ReportsModule } from './reports/reports.module';
 import { DocumentsModule } from './documents/documents.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
+import { CharterPersonnelModule } from './charter-personnel/charter-personnel.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PushModule } from './push/push.module';
+import { AvailabilityInquiriesModule } from './availability-inquiries/availability-inquiries.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 // import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { RequestLoggerInterceptor } from './common/interceptors/request-logger.interceptor';
@@ -61,8 +63,10 @@ import configuration from './config/configuration';
     ReportsModule,
     DocumentsModule,
     VehiclesModule,
+    CharterPersonnelModule,
     NotificationsModule,
     PushModule,
+    AvailabilityInquiriesModule,
   ],
   controllers: [AppController],
   providers: [

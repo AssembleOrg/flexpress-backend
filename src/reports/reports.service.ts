@@ -1,7 +1,10 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import { NotificationPriority } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateReportDto, UpdateReportDto } from './dto';
+import { buildResolutionBody } from './reports.constants';
 import { nowInBuenosAires } from '../common/utils/date.util';
 
 @Injectable()
@@ -11,6 +14,7 @@ export class ReportsService {
   constructor(
     private prisma: PrismaService,
     private conversationsService: ConversationsService,
+    private notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -170,6 +174,8 @@ export class ReportsService {
             email: true,
             role: true,
             number: true,
+            credits: true,
+            avatar: true,
           },
         },
         reported: {
@@ -179,6 +185,8 @@ export class ReportsService {
             email: true,
             role: true,
             number: true,
+            credits: true,
+            avatar: true,
           },
         },
         conversation: {
@@ -221,15 +229,40 @@ export class ReportsService {
   }
 
   /**
-   * Update report status (admin only)
+   * Update report status (admin only). When resolving with credit actions,
+   * runs report update + credit movements in a single atomic transaction and
+   * notifies both parties (fire-and-forget).
    */
   async updateReport(reportId: string, adminId: string, dto: UpdateReportDto) {
     const report = await this.prisma.report.findUnique({
       where: { id: reportId },
+      include: {
+        reporter: { select: { id: true, role: true, credits: true } },
+        reported: { select: { id: true, role: true, credits: true, deletedAt: true } },
+      },
     });
 
     if (!report) {
       throw new NotFoundException('Reporte no encontrado');
+    }
+
+    const creditsToReporter = dto.creditsToReporter ?? 0;
+    const creditsFromReported = dto.creditsFromReported ?? 0;
+    const hasCreditActions = creditsToReporter > 0 || creditsFromReported > 0;
+    const isResolving = dto.status === 'resolved';
+
+    // Validate credit removal from the reported user
+    if (isResolving && creditsFromReported > 0) {
+      if (report.reported.deletedAt) {
+        throw new BadRequestException(
+          'El reportado fue eliminado, no se pueden quitar créditos. Desestime el reporte.',
+        );
+      }
+      if (report.reported.credits < creditsFromReported) {
+        throw new BadRequestException(
+          `El reportado solo tiene ${report.reported.credits} créditos, no se pueden quitar ${creditsFromReported}`,
+        );
+      }
     }
 
     const data: any = {};
@@ -247,34 +280,97 @@ export class ReportsService {
       data.adminNotes = dto.adminNotes;
     }
 
-    const updated = await this.prisma.report.update({
-      where: { id: reportId },
-      data,
-      include: {
-        reporter: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
+    if (isResolving) {
+      data.creditsToReporter = creditsToReporter > 0 ? creditsToReporter : null;
+      data.creditsFromReported = creditsFromReported > 0 ? creditsFromReported : null;
+      data.resolvedInFavorOf = dto.resolvedInFavorOf ?? null;
+    }
+
+    const applyCredits = isResolving && hasCreditActions;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedReport = await tx.report.update({
+        where: { id: reportId },
+        data,
+        include: {
+          reporter: { select: { id: true, name: true, email: true } },
+          reported: { select: { id: true, name: true, email: true } },
         },
-        reported: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
+      });
+
+      if (applyCredits && creditsToReporter > 0) {
+        await tx.user.update({
+          where: { id: report.reporterId },
+          data: { credits: { increment: creditsToReporter } },
+        });
+      }
+
+      if (applyCredits && creditsFromReported > 0) {
+        await tx.user.update({
+          where: { id: report.reportedId },
+          data: { credits: { decrement: creditsFromReported } },
+        });
+      }
+
+      return updatedReport;
     });
 
     this.logger.log(`Reporte ${reportId} actualizado por admin ${adminId}`);
+
+    // Notify both parties when the report reaches a final state (fire-and-forget)
+    if (dto.status === 'resolved' || dto.status === 'dismissed') {
+      this.notifyResolution(reportId, report.reporter, report.reported, dto);
+    }
 
     return {
       success: true,
       message: 'Reporte actualizado exitosamente',
       data: updated,
     };
+  }
+
+  /**
+   * Fire-and-forget notification to both parties when a report is resolved/dismissed.
+   * actionUrl is role-aware so the deep-link opens the right route + tab.
+   */
+  private notifyResolution(
+    reportId: string,
+    reporter: { id: string; role: string },
+    reported: { id: string; role: string },
+    dto: UpdateReportDto,
+  ) {
+    const routeFor = (role: string) => (role === 'charter' ? '/driver' : '/client');
+
+    const recipients = [
+      {
+        forUser: 'reporter' as const,
+        userId: reporter.id,
+        actionUrl: `${routeFor(reporter.role)}/reports?tab=mine`,
+      },
+      {
+        forUser: 'reported' as const,
+        userId: reported.id,
+        actionUrl: `${routeFor(reported.role)}/reports?tab=against`,
+      },
+    ];
+
+    const title = dto.status === 'dismissed' ? 'Reporte desestimado' : 'Reporte resuelto';
+
+    for (const r of recipients) {
+      void this.notificationsService
+        .createOrUpdate({
+          userId: r.userId,
+          type: 'report_resolved',
+          title,
+          body: buildResolutionBody(r.forUser, dto),
+          priority: NotificationPriority.HIGH,
+          data: { reportId, actionUrl: r.actionUrl },
+          dedupeKey: `report_resolved_${reportId}_${r.userId}`,
+        })
+        .catch((err) => {
+          this.logger.error(`Notificación report_resolved fallida (no crítico): ${err}`);
+        });
+    }
   }
 
   /**

@@ -110,7 +110,7 @@ export class TravelMatchingController {
     @Param('id') id: string,
     @Body() dto: RespondToMatchDto,
   ) {
-    return this.matchingService.respondToMatch(req.user.id, id, dto.accept);
+    return this.matchingService.respondToMatch(req.user.id, id, dto);
   }
 
   @Put('charter/availability')

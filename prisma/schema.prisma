@@ -14,93 +14,97 @@ datasource db {
 }
 
 model User {
-  id                    String    @id @default(cuid())
-  email                 String    @unique
+  id                    String   @id @default(cuid())
+  email                 String   @unique
   name                  String
   password              String
-  role                  UserRole  @default(user)
+  role                  UserRole @default(user)
   address               String
-  credits               Int       @default(0)
+  credits               Int      @default(0)
   documentationFrontUrl String?
   documentationBackUrl  String?
   number                String
   avatar                String?
-  
+
   // Charter-specific fields (origin location for charter users)
-  originAddress         String?   // Human-readable address (e.g., "St Martin 425, Buenos Aires")
-  originLatitude        String?   // Charter's fixed starting location
-  originLongitude       String?   // Charter's fixed starting location
-  pricePerKm            Float?    // Precio informativo por km configurado por el charter
+  originAddress   String? // Human-readable address (e.g., "St Martin 425, Buenos Aires")
+  originLatitude  String? // Charter's fixed starting location
+  originLongitude String? // Charter's fixed starting location
+  pricePerKm      Float? // Precio informativo por km configurado por el charter
 
   // Charter verification (default verified so existing users are not affected)
-  verificationStatus    VerificationStatus @default(verified)
-  rejectionReason       String?
-  verifiedAt            DateTime?
-  verifiedBy            String?   // Admin user ID who verified
+  verificationStatus VerificationStatus @default(verified)
+  rejectionReason    String?
+  verifiedAt         DateTime?
+  verifiedBy         String? // Admin user ID who verified
 
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  deletedAt             DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   // Relations
-  trips                 Trip[]
-  payments              Payment[]
-  charterTrips          Trip[]    @relation("CharterTrips")
-  charterAvailability   CharterAvailability?
-  travelMatchesAsUser   TravelMatch[] @relation("UserMatches")
-  travelMatchesAsCharter TravelMatch[] @relation("CharterMatches")
-  feedbacksGiven        Feedback[] @relation("FeedbackFrom")
-  feedbacksReceived     Feedback[] @relation("FeedbackTo")
-  conversationsAsUser   Conversation[] @relation("UserConversations")
-  conversationsAsCharter Conversation[] @relation("CharterConversations")
-  messagesSent          Message[] @relation("SentMessages")
-  reportsMade           Report[] @relation("ReportsMade")
-  reportsReceived       Report[] @relation("ReportsReceived")
-  userDocuments         UserDocument[]
-  vehicles              Vehicle[]
-  notifications         Notification[]
-  pushSubscriptions     PushSubscription[]
+  trips                  Trip[]
+  payments               Payment[]
+  charterTrips           Trip[]               @relation("CharterTrips")
+  charterAvailability    CharterAvailability?
+  travelMatchesAsUser    TravelMatch[]        @relation("UserMatches")
+  travelMatchesAsCharter TravelMatch[]        @relation("CharterMatches")
+  feedbacksGiven         Feedback[]           @relation("FeedbackFrom")
+  feedbacksReceived      Feedback[]           @relation("FeedbackTo")
+  conversationsAsUser    Conversation[]       @relation("UserConversations")
+  conversationsAsCharter Conversation[]       @relation("CharterConversations")
+  messagesSent           Message[]            @relation("SentMessages")
+  reportsMade            Report[]             @relation("ReportsMade")
+  reportsReceived        Report[]             @relation("ReportsReceived")
+  userDocuments          UserDocument[]
+  vehicles               Vehicle[]
+  notifications          Notification[]
+  pushSubscriptions      PushSubscription[]
+  charterDrivers         CharterDriver[]      @relation("CharterDrivers")
+  charterHelpers         CharterHelper[]      @relation("CharterHelpers")
+  inquiriesSent          AvailabilityInquiry[] @relation("InquiriesSent")
+  inquiriesReceived      AvailabilityInquiry[] @relation("InquiriesReceived")
 
   @@map("users")
 }
 
 model Trip {
-  id              String     @id @default(cuid())
-  userId          String
-  charterId       String
-  address         String     // Dirección completa del destino (ej: "Av. Hipólito Yrigoyen 8985, Temperley, Buenos Aires")
-  latitude        String
-  longitude       String
-  status          TripStatus @default(pending)
+  id        String     @id @default(cuid())
+  userId    String
+  charterId String
+  address   String // Dirección completa del destino (ej: "Av. Hipólito Yrigoyen 8985, Temperley, Buenos Aires")
+  latitude  String
+  longitude String
+  status    TripStatus @default(pending)
 
   // Workers and scheduling
-  workersCount    Int        @default(0)  // Number of workers to help load/unload
-  scheduledDate   DateTime?               // When the trip is scheduled to start
+  workersCount  Int       @default(0) // Number of workers to help load/unload
+  scheduledDate DateTime? // When the trip is scheduled to start
 
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-  deletedAt       DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   // Relations
-  user            User          @relation(fields: [userId], references: [id])
-  charter         User          @relation("CharterTrips", fields: [charterId], references: [id])
-  travelMatch     TravelMatch?
-  feedbacks       Feedback[]
+  user        User         @relation(fields: [userId], references: [id])
+  charter     User         @relation("CharterTrips", fields: [charterId], references: [id])
+  travelMatch TravelMatch?
+  feedbacks   Feedback[]
 
   @@map("trips")
 }
 
 model Payment {
-  id         String        @id @default(cuid())
-  userId     String
-  credits    Int
-  amount     Float
-  status     PaymentStatus @default(pending)
-  receiptUrl String?
+  id              String        @id @default(cuid())
+  userId          String
+  credits         Int
+  amount          Float
+  status          PaymentStatus @default(pending)
+  receiptUrl      String?
   rejectionReason String?
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
-  deletedAt  DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
 
   // Relations
   user User @relation(fields: [userId], references: [id])
@@ -109,188 +113,192 @@ model Payment {
 }
 
 model SystemConfig {
-  id                String   @id @default(cuid())
-  key               String   @unique
-  value             String
-  description       String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@map("system_configs")
 }
 
 model AuditLog {
-  id          String   @id @default(cuid())
-  entityType  String
-  entityId    String
-  action      String
-  oldValues   Json?
-  newValues   Json?
-  ipAddress   String?
-  location    String?
-  userId      String?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  action     String
+  oldValues  Json?
+  newValues  Json?
+  ipAddress  String?
+  location   String?
+  userId     String?
+  createdAt  DateTime @default(now())
 
   @@map("audit_logs")
 }
 
 model CharterAvailability {
-  id              String   @id @default(cuid())
-  charterId       String   @unique
-  isAvailable     Boolean  @default(false)
-  vehicleId       String?  @unique
-  lastToggledAt   DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id            String   @id @default(cuid())
+  charterId     String   @unique
+  isAvailable   Boolean  @default(false)
+  vehicleId     String?  @unique
+  lastToggledAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   // Relations
-  charter         User     @relation(fields: [charterId], references: [id])
-  vehicle         Vehicle? @relation(fields: [vehicleId], references: [id])
+  charter User     @relation(fields: [charterId], references: [id])
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id])
 
   @@map("charter_availability")
 }
 
 model TravelMatch {
-  id                    String              @id @default(cuid())
-  userId                String
-  charterId             String?             // Null until user selects a charter
-  
+  id        String  @id @default(cuid())
+  userId    String
+  charterId String? // Null until user selects a charter
+
   // Origin (user's starting point)
-  pickupAddress         String              // Dirección de recogida completa
-  pickupLatitude        String
-  pickupLongitude       String
-  
+  pickupAddress   String // Dirección de recogida completa
+  pickupLatitude  String
+  pickupLongitude String
+
   // Destination
-  destinationAddress    String              // Dirección de destino completa
-  destinationLatitude   String
-  destinationLongitude  String
-  
+  destinationAddress   String // Dirección de destino completa
+  destinationLatitude  String
+  destinationLongitude String
+
   // Calculated values
-  distanceKm            Float?              // Total distance in kilometers
-  estimatedCredits      Int?                // Estimated cost in credits
-  
+  distanceKm       Float? // Total distance in kilometers
+  estimatedCredits Int? // Estimated cost in credits
+
   // Match details
-  maxRadiusKm           Float               @default(30) // Maximum search radius for charters
-  status                TravelMatchStatus   @default(searching)
-  
+  maxRadiusKm Float             @default(30) // Maximum search radius for charters
+  status      TravelMatchStatus @default(searching)
+
   // Workers and scheduling
-  workersCount          Int                 @default(0)  // Number of workers requested
-  scheduledDate         DateTime?                        // When trip should start
-  
+  workersCount  Int       @default(0) // Number of workers requested
+  scheduledDate DateTime? // When trip should start
+
   // Trip creation
-  tripId                String?             @unique     // Created trip after match confirmed
+  tripId String? @unique // Created trip after match confirmed
 
   // Conversation creation
-  conversationId        String?             @unique     // Created conversation when charter accepts
+  conversationId String? @unique // Created conversation when charter accepts
 
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
-  expiresAt             DateTime?           // Match expiration time
-  deletedAt             DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  expiresAt DateTime? // Match expiration time
+  deletedAt DateTime?
 
   // Relations
-  user                  User                @relation("UserMatches", fields: [userId], references: [id])
-  charter               User?               @relation("CharterMatches", fields: [charterId], references: [id])
-  trip                  Trip?               @relation(fields: [tripId], references: [id])
-  conversation          Conversation?       @relation(fields: [conversationId], references: [id])
+  user         User           @relation("UserMatches", fields: [userId], references: [id])
+  charter      User?          @relation("CharterMatches", fields: [charterId], references: [id])
+  trip         Trip?          @relation(fields: [tripId], references: [id])
+  conversation Conversation?  @relation(fields: [conversationId], references: [id])
+  personnel    TripPersonnel?
 
-  @@map("travel_matches")
   @@index([status])
   @@index([userId])
   @@index([charterId])
   @@index([scheduledDate])
+  @@map("travel_matches")
 }
 
 model Feedback {
-  id          String   @id @default(cuid())
-  tripId      String
-  fromUserId  String   // Who is giving the feedback
-  toUserId    String   // Who is receiving the feedback
-  rating      Int      // 1-5 stars
-  comment     String?  // Optional comment
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  tripId     String
+  fromUserId String // Who is giving the feedback
+  toUserId   String // Who is receiving the feedback
+  rating     Int // 1-5 stars
+  comment    String? // Optional comment
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   // Relations
-  trip        Trip     @relation(fields: [tripId], references: [id])
-  fromUser    User     @relation("FeedbackFrom", fields: [fromUserId], references: [id])
-  toUser      User     @relation("FeedbackTo", fields: [toUserId], references: [id])
+  trip     Trip @relation(fields: [tripId], references: [id])
+  fromUser User @relation("FeedbackFrom", fields: [fromUserId], references: [id])
+  toUser   User @relation("FeedbackTo", fields: [toUserId], references: [id])
 
   @@unique([tripId, fromUserId]) // One feedback per user per trip
-  @@map("feedbacks")
   @@index([toUserId])
   @@index([tripId])
+  @@map("feedbacks")
 }
 
 model Conversation {
-  id              String              @id @default(cuid())
-  matchId         String              @unique
-  userId          String
-  charterId       String
-  status          ConversationStatus  @default(active)
-  closedBy        String?             // User ID who closed the conversation
-  closedAt        DateTime?
-  expiresAt       DateTime            // Auto-delete after 5 hours
-  isArchived      Boolean             @default(false) // true if saved due to report
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  id         String             @id @default(cuid())
+  matchId    String             @unique
+  userId     String
+  charterId  String
+  status     ConversationStatus @default(active)
+  closedBy   String? // User ID who closed the conversation
+  closedAt   DateTime?
+  expiresAt  DateTime // Auto-delete after 5 hours
+  isArchived Boolean            @default(false) // true if saved due to report
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
 
   // Relations
-  user            User                @relation("UserConversations", fields: [userId], references: [id])
-  charter         User                @relation("CharterConversations", fields: [charterId], references: [id])
-  messages        Message[]
-  reports         Report[]
-  travelMatch     TravelMatch?
+  user        User         @relation("UserConversations", fields: [userId], references: [id])
+  charter     User         @relation("CharterConversations", fields: [charterId], references: [id])
+  messages    Message[]
+  reports     Report[]
+  travelMatch TravelMatch?
 
-  @@map("conversations")
   @@index([status])
   @@index([userId])
   @@index([charterId])
   @@index([expiresAt])
+  @@map("conversations")
 }
 
 model Message {
-  id              String       @id @default(cuid())
-  conversationId  String
-  senderId        String
-  content         String       @db.Text
-  isRead          Boolean      @default(false)
-  createdAt       DateTime     @default(now())
+  id             String   @id @default(cuid())
+  conversationId String
+  senderId       String
+  content        String   @db.Text
+  isRead         Boolean  @default(false)
+  createdAt      DateTime @default(now())
 
   // Relations
-  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender          User         @relation("SentMessages", fields: [senderId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation("SentMessages", fields: [senderId], references: [id])
 
-  @@map("messages")
   @@index([conversationId])
   @@index([senderId])
   @@index([createdAt])
+  @@map("messages")
 }
 
 model Report {
-  id              String       @id @default(cuid())
-  conversationId  String
-  reporterId      String       // Who is making the report
-  reportedId      String       // Who is being reported
-  reason          String
-  description     String?      @db.Text
-  status          ReportStatus @default(pending)
-  adminNotes      String?      @db.Text
-  resolvedAt      DateTime?
-  resolvedBy      String?      // Admin user ID
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  id             String       @id @default(cuid())
+  conversationId String
+  reporterId     String // Who is making the report
+  reportedId     String // Who is being reported
+  reason         String
+  description    String?      @db.Text
+  status         ReportStatus @default(pending)
+  adminNotes     String?      @db.Text
+  resolvedAt     DateTime?
+  resolvedBy     String? // Admin user ID
+  creditsToReporter   Int? // Créditos devueltos al reportador en la resolución
+  creditsFromReported Int? // Créditos quitados al reportado en la resolución
+  resolvedInFavorOf   ReportResolutionFavor? // Informativo: a favor de quién se resolvió
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   // Relations
-  conversation    Conversation @relation(fields: [conversationId], references: [id])
-  reporter        User         @relation("ReportsMade", fields: [reporterId], references: [id])
-  reported        User         @relation("ReportsReceived", fields: [reportedId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  reporter     User         @relation("ReportsMade", fields: [reporterId], references: [id])
+  reported     User         @relation("ReportsReceived", fields: [reportedId], references: [id])
 
-  @@map("reports")
   @@index([reporterId])
   @@index([reportedId])
   @@index([status])
   @@index([conversationId])
+  @@map("reports")
 }
 
 enum UserRole {
@@ -307,110 +315,116 @@ enum PaymentStatus {
 }
 
 enum TravelMatchStatus {
-  searching       // User is looking for charters
-  pending         // User selected a charter, waiting for confirmation
-  accepted        // Charter accepted, can communicate
-  rejected        // Charter rejected
-  completed       // Trip created
-  cancelled       // User cancelled
-  expired         // Match expired
+  searching // User is looking for charters
+  pending // User selected a charter, waiting for confirmation
+  accepted // Charter accepted, can communicate
+  rejected // Charter rejected
+  completed // Trip created
+  cancelled // User cancelled
+  expired // Match expired
 }
 
 enum ConversationStatus {
-  active          // Conversation is open
-  closed          // Closed by either party
-  expired         // Auto-closed after expiration
+  active // Conversation is open
+  closed // Closed by either party
+  expired // Auto-closed after expiration
 }
 
 enum TripStatus {
-  pending           // Trip confirmed, waiting for completion
+  pending // Trip confirmed, waiting for completion
   charter_completed // Charter finished work, waiting for client confirmation
-  completed         // Both parties confirmed completion
-  cancelled         // Trip was cancelled
+  completed // Both parties confirmed completion
+  cancelled // Trip was cancelled
 }
 
 enum ReportStatus {
-  pending         // Report submitted, awaiting review
-  investigating   // Admin is reviewing
-  resolved        // Resolved by admin
-  dismissed       // Report was dismissed
+  pending // Report submitted, awaiting review
+  investigating // Admin is reviewing
+  resolved // Resolved by admin
+  dismissed // Report was dismissed
+}
+
+enum ReportResolutionFavor {
+  reporter // A favor del que reportó
+  reported // A favor del reportado
+  company // Sin razón clara para ninguna parte
 }
 
 enum VerificationStatus {
-  pending         // New charter awaiting validation
-  verified        // Admin approved, can operate
-  rejected        // Admin rejected
+  pending // New charter awaiting validation
+  verified // Admin approved, can operate
+  rejected // Admin rejected
 }
 
 // ─── New: Documents & Vehicles ───────────────────────────────────────────────
 
 model UserDocument {
-  id               String              @id @default(cuid())
-  userId           String
-  type             UserDocumentType
-  side             DocumentSide?
-  fileUrl          String
-  status           DocumentReviewStatus @default(pending)
-  rejectionReason  String?
-  reviewedAt       DateTime?
-  reviewedBy       String?
-  uploadedAt       DateTime            @default(now())
-  updatedAt        DateTime            @updatedAt
-  deletedAt        DateTime?
+  id              String               @id @default(cuid())
+  userId          String
+  type            UserDocumentType
+  side            DocumentSide?
+  fileUrl         String
+  status          DocumentReviewStatus @default(pending)
+  rejectionReason String?
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  uploadedAt      DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  deletedAt       DateTime?
 
-  user             User                @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 
-  @@map("user_documents")
   @@index([userId])
   @@index([type])
   @@index([status])
+  @@map("user_documents")
 }
 
 model Vehicle {
-  id                 String              @id @default(cuid())
+  id                 String             @id @default(cuid())
   charterId          String
   plate              String
   brand              String?
   model              String?
   year               Int?
   alias              String?
-  isEnabled          Boolean             @default(false)
-  verificationStatus VerificationStatus  @default(pending)
+  isEnabled          Boolean            @default(false)
+  verificationStatus VerificationStatus @default(pending)
   rejectionReason    String?
   verifiedAt         DateTime?
   verifiedBy         String?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
   deletedAt          DateTime?
 
-  charter            User                @relation(fields: [charterId], references: [id])
-  documents          VehicleDocument[]
+  charter             User                 @relation(fields: [charterId], references: [id])
+  documents           VehicleDocument[]
   charterAvailability CharterAvailability?
 
-  @@map("vehicles")
   @@index([charterId])
+  @@map("vehicles")
 }
 
 model VehicleDocument {
-  id               String               @id @default(cuid())
-  vehicleId        String
-  type             VehicleDocumentType
-  fileUrl          String
-  status           DocumentReviewStatus  @default(pending)
-  rejectionReason  String?
-  reviewedAt       DateTime?
-  reviewedBy       String?
-  expiresAt        DateTime?
-  uploadedAt       DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  deletedAt        DateTime?
+  id              String               @id @default(cuid())
+  vehicleId       String
+  type            VehicleDocumentType
+  fileUrl         String
+  status          DocumentReviewStatus @default(pending)
+  rejectionReason String?
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  expiresAt       DateTime?
+  uploadedAt      DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  deletedAt       DateTime?
 
-  vehicle          Vehicle              @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
-  @@map("vehicle_documents")
   @@index([vehicleId])
   @@index([type])
   @@index([status])
+  @@map("vehicle_documents")
 }
 
 enum DocumentReviewStatus {
@@ -441,18 +455,18 @@ enum NotificationPriority {
 }
 
 model Notification {
-  id         String               @id @default(cuid())
-  userId     String
-  type       String
-  title      String
-  body       String
-  priority   NotificationPriority @default(LOW)
-  isRead     Boolean              @default(false)
-  readAt     DateTime?
-  data       Json?
-  dedupeKey  String?              @db.VarChar(255)
-  createdAt  DateTime             @default(now())
-  updatedAt  DateTime             @updatedAt
+  id        String               @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  priority  NotificationPriority @default(LOW)
+  isRead    Boolean              @default(false)
+  readAt    DateTime?
+  data      Json?
+  dedupeKey String?              @db.VarChar(255)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
 
   user User @relation(fields: [userId], references: [id])
 
@@ -473,4 +487,157 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+// ─── Charter Personnel (extra drivers + helpers) ─────────────────────────────
+
+model CharterDriver {
+  id                 String             @id @default(cuid())
+  charterId          String
+  firstName          String
+  lastName           String
+  phone              String?
+  photoUrl           String?
+  verificationStatus VerificationStatus @default(pending)
+  rejectionReason    String?
+  verifiedAt         DateTime?
+  verifiedBy         String?
+  isEnabled          Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+
+  charter         User                    @relation("CharterDrivers", fields: [charterId], references: [id])
+  documents       CharterDriverDocument[]
+  tripAssignments TripPersonnel[]         @relation("TripDriver")
+
+  @@index([charterId])
+  @@index([verificationStatus])
+  @@map("charter_drivers")
+}
+
+model CharterDriverDocument {
+  id              String                    @id @default(cuid())
+  driverId        String
+  type            CharterDriverDocumentType
+  side            DocumentSide?
+  fileUrl         String
+  status          DocumentReviewStatus      @default(pending)
+  rejectionReason String?
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  expiresAt       DateTime?
+  uploadedAt      DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+  deletedAt       DateTime?
+
+  driver CharterDriver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId])
+  @@index([type])
+  @@index([status])
+  @@map("charter_driver_documents")
+}
+
+model CharterHelper {
+  id                 String             @id @default(cuid())
+  charterId          String
+  firstName          String
+  lastName           String
+  photoUrl           String?
+  verificationStatus VerificationStatus @default(pending)
+  rejectionReason    String?
+  verifiedAt         DateTime?
+  verifiedBy         String?
+  isEnabled          Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+
+  charter   User                    @relation("CharterHelpers", fields: [charterId], references: [id])
+  documents CharterHelperDocument[]
+
+  @@index([charterId])
+  @@index([verificationStatus])
+  @@map("charter_helpers")
+}
+
+model CharterHelperDocument {
+  id              String                    @id @default(cuid())
+  helperId        String
+  type            CharterHelperDocumentType
+  side            DocumentSide
+  fileUrl         String
+  status          DocumentReviewStatus      @default(pending)
+  rejectionReason String?
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  uploadedAt      DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+  deletedAt       DateTime?
+
+  helper CharterHelper @relation(fields: [helperId], references: [id], onDelete: Cascade)
+
+  @@index([helperId])
+  @@map("charter_helper_documents")
+}
+
+model TripPersonnel {
+  id        String   @id @default(cuid())
+  matchId   String   @unique
+  driverId  String?
+  helperIds String[]
+  snapshot  Json
+  createdAt DateTime @default(now())
+
+  match  TravelMatch    @relation(fields: [matchId], references: [id])
+  driver CharterDriver? @relation("TripDriver", fields: [driverId], references: [id])
+
+  @@index([matchId])
+  @@map("trip_personnel")
+}
+
+enum CharterDriverDocumentType {
+  dni
+  license
+}
+
+enum CharterHelperDocumentType {
+  dni
+}
+
+// ─── Availability Inquiries (charter ocupado) ────────────────────────────────
+
+model AvailabilityInquiry {
+  id           String               @id @default(cuid())
+  fromUserId   String
+  toCharterId  String
+  status       InquiryStatus        @default(pending)
+  responseCode InquiryResponseCode?
+  respondedAt  DateTime?
+  expiresAt    DateTime
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  fromUser  User @relation("InquiriesSent", fields: [fromUserId], references: [id])
+  toCharter User @relation("InquiriesReceived", fields: [toCharterId], references: [id])
+
+  @@index([fromUserId, toCharterId, status])
+  @@index([toCharterId, status])
+  @@index([expiresAt])
+  @@map("availability_inquiries")
+}
+
+enum InquiryStatus {
+  pending
+  answered
+  expired
+}
+
+enum InquiryResponseCode {
+  available_soon
+  available_today_later
+  available_tomorrow
+  not_today
+  not_available
 }
