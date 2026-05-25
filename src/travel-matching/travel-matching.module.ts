@@ -10,7 +10,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 @Module({
   imports: [
     PrismaModule,
-    NotificationsModule,
+    forwardRef(() => NotificationsModule),
     forwardRef(() => ConversationsModule),
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'your-secret-key',

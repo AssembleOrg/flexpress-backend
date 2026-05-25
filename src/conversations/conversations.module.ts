@@ -6,7 +6,7 @@ import { TravelMatchingModule } from '../travel-matching/travel-matching.module'
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [PrismaModule, NotificationsModule, forwardRef(() => TravelMatchingModule)],
+  imports: [PrismaModule, forwardRef(() => NotificationsModule), forwardRef(() => TravelMatchingModule)],
   controllers: [ConversationsController],
   providers: [ConversationsService],
   exports: [ConversationsService],
