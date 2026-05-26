@@ -285,6 +285,8 @@ model Report {
   resolvedBy     String? // Admin user ID
   creditsToReporter   Int? // Créditos devueltos al reportador en la resolución
   creditsFromReported Int? // Créditos quitados al reportado en la resolución
+  creditsToReported   Int? // Créditos compensados al reportado (reporte falso)
+  creditsFromReporter Int? // Créditos descontados al reportador (reporte falso)
   resolvedInFavorOf   ReportResolutionFavor? // Informativo: a favor de quién se resolvió
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt

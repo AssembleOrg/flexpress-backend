@@ -19,8 +19,16 @@ export function buildResolutionBody(
     parts.push(`Se te devolvieron ${dto.creditsToReporter} créditos.`);
   }
 
+  if (forUser === 'reporter' && dto.creditsFromReporter && dto.creditsFromReporter > 0) {
+    parts.push(`Se te descontaron ${dto.creditsFromReporter} créditos.`);
+  }
+
   if (forUser === 'reported' && dto.creditsFromReported && dto.creditsFromReported > 0) {
     parts.push(`Se te descontaron ${dto.creditsFromReported} créditos.`);
+  }
+
+  if (forUser === 'reported' && dto.creditsToReported && dto.creditsToReported > 0) {
+    parts.push(`Se te compensaron ${dto.creditsToReported} créditos.`);
   }
 
   if (dto.adminNotes) {

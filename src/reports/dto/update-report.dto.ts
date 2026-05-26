@@ -38,6 +38,24 @@ export class UpdateReportDto {
   creditsFromReported?: number;
 
   @ApiPropertyOptional({
+    description: 'Créditos a compensar al reportado (cuando el reporte fue falso)',
+    example: 1,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  creditsToReported?: number;
+
+  @ApiPropertyOptional({
+    description: 'Créditos a descontar al reportador (sanción por reporte falso)',
+    example: 1,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  creditsFromReporter?: number;
+
+  @ApiPropertyOptional({
     description: 'A favor de quién se resuelve (informativo)',
     enum: ['reporter', 'reported', 'company'],
   })

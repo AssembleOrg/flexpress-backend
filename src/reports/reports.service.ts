@@ -248,7 +248,9 @@ export class ReportsService {
 
     const creditsToReporter = dto.creditsToReporter ?? 0;
     const creditsFromReported = dto.creditsFromReported ?? 0;
-    const hasCreditActions = creditsToReporter > 0 || creditsFromReported > 0;
+    const creditsToReported = dto.creditsToReported ?? 0;
+    const creditsFromReporter = dto.creditsFromReporter ?? 0;
+    const hasCreditActions = creditsToReporter > 0 || creditsFromReported > 0 || creditsToReported > 0 || creditsFromReporter > 0;
     const isResolving = dto.status === 'resolved';
 
     // Validate credit removal from the reported user
@@ -261,6 +263,15 @@ export class ReportsService {
       if (report.reported.credits < creditsFromReported) {
         throw new BadRequestException(
           `El reportado solo tiene ${report.reported.credits} créditos, no se pueden quitar ${creditsFromReported}`,
+        );
+      }
+    }
+
+    // Validate credit removal from the reporter
+    if (isResolving && creditsFromReporter > 0) {
+      if (report.reporter.credits < creditsFromReporter) {
+        throw new BadRequestException(
+          `El reportador solo tiene ${report.reporter.credits} créditos, no se pueden quitar ${creditsFromReporter}`,
         );
       }
     }
@@ -283,6 +294,8 @@ export class ReportsService {
     if (isResolving) {
       data.creditsToReporter = creditsToReporter > 0 ? creditsToReporter : null;
       data.creditsFromReported = creditsFromReported > 0 ? creditsFromReported : null;
+      data.creditsToReported = creditsToReported > 0 ? creditsToReported : null;
+      data.creditsFromReporter = creditsFromReporter > 0 ? creditsFromReporter : null;
       data.resolvedInFavorOf = dto.resolvedInFavorOf ?? null;
     }
 
@@ -309,6 +322,20 @@ export class ReportsService {
         await tx.user.update({
           where: { id: report.reportedId },
           data: { credits: { decrement: creditsFromReported } },
+        });
+      }
+
+      if (applyCredits && creditsToReported > 0) {
+        await tx.user.update({
+          where: { id: report.reportedId },
+          data: { credits: { increment: creditsToReported } },
+        });
+      }
+
+      if (applyCredits && creditsFromReporter > 0) {
+        await tx.user.update({
+          where: { id: report.reporterId },
+          data: { credits: { decrement: creditsFromReporter } },
         });
       }
 
