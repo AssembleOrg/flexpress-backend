@@ -1,8 +1,22 @@
-import { IsEmail, IsString, IsOptional, IsEnum, IsNumber, Min } from 'class-validator';
+import {
+  IsEmail,
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsNumber,
+  Min,
+  Matches,
+} from 'class-validator';
 import { UserRole } from '../../common/enums';
 import { Transform } from 'class-transformer';
 
+// Debe coincidir con CANONICAL_AR_PHONE_REGEX del frontend (lib/utils/phone.ts).
+const AR_PHONE_REGEX = /^\+54 9 \d{2} \d{4}-\d{4}$/;
+
 export class CreateUserDto {
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
   @IsEmail()
   email: string;
 
@@ -32,6 +46,7 @@ export class CreateUserDto {
   documentationBackUrl?: string;
 
   @IsString()
+  @Matches(AR_PHONE_REGEX, { message: 'Teléfono argentino inválido' })
   number: string;
 
   @IsOptional()
@@ -56,4 +71,4 @@ export class CreateUserDto {
   @IsNumber()
   @Min(0)
   pricePerKm?: number;
-} 
+}
