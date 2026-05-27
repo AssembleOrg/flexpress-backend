@@ -15,6 +15,7 @@ export class TripResponseDto extends BaseEntityDto {
   longitude: string;
   status: TripStatus;
   workersCount?: number;
+  cargoDescription?: string | null;
   scheduledDate?: Date;
   user?: {
     id: string;
@@ -26,4 +27,13 @@ export class TripResponseDto extends BaseEntityDto {
     name: string;
     email: string;
   };
-} 
+  travelMatch?: {
+    id: string;
+    pickupAddress: string;
+    destinationAddress: string;
+    estimatedCredits?: number | null;
+    distanceKm?: number | null;
+    cargoDescription?: string | null;
+    personnel?: { snapshot: unknown } | null;
+  } | null;
+}

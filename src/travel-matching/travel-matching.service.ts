@@ -117,6 +117,7 @@ export class TravelMatchingService {
         destinationLongitude: dto.destinationLongitude,
         maxRadiusKm: dto.maxRadiusKm || 30,
         workersCount: dto.workersCount || 0,
+        cargoDescription: dto.cargoDescription ?? null,
         scheduledDate,
         status: 'searching',
         expiresAt: addMinutes(30).toJSDate(), // 30 minutes expiry
@@ -721,6 +722,7 @@ export class TravelMatchingService {
           latitude: match.destinationLatitude,
           longitude: match.destinationLongitude,
           workersCount: match.workersCount,
+          cargoDescription: match.cargoDescription,
           scheduledDate: match.scheduledDate,
         },
       });

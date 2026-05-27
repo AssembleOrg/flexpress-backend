@@ -81,6 +81,9 @@ model Trip {
   workersCount  Int       @default(0) // Number of workers to help load/unload
   scheduledDate DateTime? // When the trip is scheduled to start
 
+  // Cargo
+  cargoDescription String? // Free text: what the client is moving (e.g. "2 heladeras, 1 lavarropas")
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -180,6 +183,9 @@ model TravelMatch {
   // Workers and scheduling
   workersCount  Int       @default(0) // Number of workers requested
   scheduledDate DateTime? // When trip should start
+
+  // Cargo
+  cargoDescription String? // Free text: what the client is moving (e.g. "2 heladeras, 1 lavarropas")
 
   // Trip creation
   tripId String? @unique // Created trip after match confirmed

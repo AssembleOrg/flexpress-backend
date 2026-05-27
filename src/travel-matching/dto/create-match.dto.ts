@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, Min, Max, IsDateString, IsInt } from 'class-validator';
+import { IsString, IsNumber, IsOptional, Min, Max, IsDateString, IsInt, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateMatchDto {
@@ -57,5 +57,15 @@ export class CreateMatchDto {
   @IsOptional()
   @IsDateString()
   scheduledDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Descripción libre de la carga a mover',
+    example: '2 heladeras, 1 lavarropas',
+    maxLength: 140,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(140)
+  cargoDescription?: string;
 }
 
