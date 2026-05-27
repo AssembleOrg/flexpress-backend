@@ -594,6 +594,20 @@ export class TravelMatchingService {
       });
     }
 
+    if (accept) {
+      // Crear la conversación y vincularla al match ANTES de devolver el match,
+      // para que la respuesta incluya siempre el conversationId. createConversation
+      // es idempotente: si ya existe, devuelve la existente.
+      const conversationResult =
+        await this.conversationsService.createConversation(matchId);
+      const conversation = conversationResult.data;
+
+      await this.prisma.travelMatch.update({
+        where: { id: matchId },
+        data: { conversationId: conversation.id },
+      });
+    }
+
     const updatedMatch = await this.prisma.travelMatch.findUnique({
       where: { id: matchId },
       include: {
@@ -616,27 +630,15 @@ export class TravelMatchingService {
             originAddress: true,
           },
         },
+        conversation: {
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+          },
+        },
       },
     });
-
-    if (accept) {
-      try {
-        // Crear la conversación automáticamente
-        const conversationResult = await this.conversationsService.createConversation(matchId);
-        const conversation = conversationResult.data;
-
-        // ✅ NUEVO: Guardar conversationId en el match
-        await this.prisma.travelMatch.update({
-          where: { id: matchId },
-          data: { conversationId: conversation.id },
-        });
-      } catch (error) {
-        console.error(
-          `❌ Falló la creación automática de la conversación para el match ${matchId}`,
-          error,
-        );
-      }
-    }
 
     if (!updatedMatch) {
       throw new NotFoundException('Búsqueda no encontrada');
@@ -746,6 +748,26 @@ export class TravelMatchingService {
    * Get match details
    */
   async getMatch(matchId: string) {
+    // Auto-reparación: si el match no tiene conversationId pero existe una
+    // Conversation vinculada por matchId (caso histórico de matches huérfanos),
+    // escribir el scalar para que la relación se resuelva correctamente.
+    const matchLink = await this.prisma.travelMatch.findUnique({
+      where: { id: matchId },
+      select: { id: true, conversationId: true },
+    });
+    if (matchLink && !matchLink.conversationId) {
+      const orphanConversation = await this.prisma.conversation.findUnique({
+        where: { matchId },
+        select: { id: true },
+      });
+      if (orphanConversation) {
+        await this.prisma.travelMatch.update({
+          where: { id: matchId },
+          data: { conversationId: orphanConversation.id },
+        });
+      }
+    }
+
     const match = await this.prisma.travelMatch.findUnique({
       where: { id: matchId },
       include: {
