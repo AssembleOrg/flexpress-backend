@@ -456,7 +456,7 @@ export class TravelMatchingService {
         title: 'Nuevo pedido de viaje',
         body: `Un cliente te seleccionó para un viaje. ¡Revisá y respondé!`,
         priority: NotificationPriority.HIGH,
-        data: { actionUrl: `/driver/trips/matching/${updatedMatch.id}`, matchId: updatedMatch.id },
+        data: { actionUrl: `/driver/dashboard`, matchId: updatedMatch.id },
       });
     } catch (err) {
       this.logger.error(`Notificación match_selected fallida (no crítico): ${err}`);
