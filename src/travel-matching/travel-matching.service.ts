@@ -736,6 +736,15 @@ export class TravelMatchingService {
         },
       });
 
+      // El chat del viaje no debe expirar/borrarse mientras el viaje exista.
+      // Archivarlo lo excluye del cron de limpieza (filtra por isArchived: false).
+      if (match.conversationId) {
+        await tx.conversation.update({
+          where: { id: match.conversationId },
+          data: { isArchived: true },
+        });
+      }
+
       return trip;
     });
 

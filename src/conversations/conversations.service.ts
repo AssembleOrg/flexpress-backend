@@ -38,7 +38,7 @@ export class ConversationsService {
       throw new NotFoundException('Búsqueda no encontrada');
     }
 
-    if (match.status !== 'accepted') {
+    if (match.status !== 'accepted' && match.status !== 'completed') {
       throw new BadRequestException(
         'La búsqueda debe estar aceptada para abrir conversación',
       );
@@ -61,7 +61,8 @@ export class ConversationsService {
       };
     }
 
-    // Create conversation with 5-hour expiration
+    // Create conversation with 5-hour expiration. Si el viaje ya existe
+    // (match completed), nace archivada para que el cron no la borre.
     const conversation = await this.prisma.conversation.create({
       data: {
         matchId,
@@ -69,6 +70,7 @@ export class ConversationsService {
         charterId: match.charterId,
         status: 'active',
         expiresAt: addHours(5).toJSDate(),
+        isArchived: match.status === 'completed',
       },
       include: {
         user: {
