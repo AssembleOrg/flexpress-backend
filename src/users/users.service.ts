@@ -1,6 +1,12 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateUserDto, UpdateUserDto, UserResponseDto, VerifyCharterDto } from './dto';
+import {
+  CreateUserDto,
+  UpdateUserDto,
+  UserResponseDto,
+  VerifyCharterDto,
+  UpdateAccountStatusDto,
+} from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { AuthService } from '../auth/auth.service';
 
@@ -159,6 +165,8 @@ export class UsersService {
         rejectionReason: true,
         verifiedAt: true,
         verifiedBy: true,
+        accountStatus: true,
+        accountStatusNote: true,
         pricePerKm: true,
         createdAt: true,
         updatedAt: true,
@@ -266,6 +274,92 @@ export class UsersService {
     });
 
     return updatedCharter as UserResponseDto;
+  }
+
+  /**
+   * Sanción a nivel cuenta (el titular es la unidad punible). El admin puede
+   * marcar la cuenta como active/warned/banned. Un charter banned no puede
+   * operar ni aparecer en búsqueda (la validación vive en travel-matching).
+   */
+  async updateAccountStatus(
+    charterId: string,
+    dto: UpdateAccountStatusDto,
+    adminId: string,
+  ): Promise<UserResponseDto> {
+    const charter = await this.prisma.user.findFirst({
+      where: { id: charterId, deletedAt: null },
+    });
+
+    if (!charter) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+    if (charter.role !== 'charter') {
+      throw new BadRequestException('Este usuario no es un charter');
+    }
+    if (dto.status !== 'active' && !dto.note) {
+      throw new BadRequestException(
+        'Debe proporcionar un motivo para advertir o bloquear la cuenta',
+      );
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: charterId },
+      data: {
+        accountStatus: dto.status,
+        accountStatusNote: dto.status === 'active' ? null : dto.note,
+        accountStatusAt: new Date(),
+        accountStatusBy: adminId,
+      },
+    });
+
+    // Si se bloquea, sacarlo de disponibilidad para que no quede "en línea".
+    if (dto.status === 'banned') {
+      await this.prisma.charterAvailability.updateMany({
+        where: { charterId, isAvailable: true },
+        data: { isAvailable: false },
+      });
+    }
+
+    return updated as unknown as UserResponseDto;
+  }
+
+  /**
+   * Detalle consolidado de una cuenta charter para el admin: titular +
+   * vehículos + conductores + ayudantes (con documentos) + config activa.
+   * Solo lectura/investigación; la sanción se aplica a nivel cuenta.
+   */
+  async getCharterFullDetail(charterId: string) {
+    const charter = await this.prisma.user.findFirst({
+      where: { id: charterId, deletedAt: null },
+      include: {
+        userDocuments: {
+          where: { deletedAt: null },
+        },
+        vehicles: {
+          where: { deletedAt: null },
+          include: { documents: { where: { deletedAt: null } } },
+        },
+        charterDrivers: {
+          where: { deletedAt: null },
+          include: { documents: { where: { deletedAt: null } } },
+        },
+        charterHelpers: {
+          where: { deletedAt: null },
+          include: { documents: { where: { deletedAt: null } } },
+        },
+        charterAvailability: {
+          include: { vehicle: true, activeDriver: true },
+        },
+      },
+    });
+
+    if (!charter) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    // Nunca exponer el password.
+    const { password: _password, ...safe } = charter as any;
+    return safe;
   }
 
   async findPendingCharters(): Promise<any[]> {

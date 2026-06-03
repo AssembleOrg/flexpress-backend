@@ -27,6 +27,7 @@ import {
   UpdateUserDto,
   UserResponseDto,
   VerifyCharterDto,
+  UpdateAccountStatusDto,
 } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -530,4 +531,40 @@ export class UsersController {
     }
     return this.usersService.verifyCharter(id, verifyCharterDto, req.user.id);
   }
-} 
+
+  @Get(':id/charter-detail')
+  @ApiOperation({
+    summary:
+      'Detalle consolidado de una cuenta charter (titular + vehículos + conductores + ayudantes + documentos). Admin only.',
+  })
+  @ApiParam({ name: 'id', description: 'Charter User ID' })
+  async getCharterFullDetail(@Param('id') id: string, @Request() req) {
+    const userRole = req.user?.role;
+    if (userRole !== 'admin' && userRole !== 'subadmin') {
+      throw new ForbiddenException('Solo administradores');
+    }
+    return this.usersService.getCharterFullDetail(id);
+  }
+
+  @Patch(':id/account-status')
+  @ApiOperation({
+    summary:
+      'Advertir o bloquear una cuenta charter (sanción a nivel cuenta). Admin only.',
+  })
+  @ApiParam({ name: 'id', description: 'Charter User ID' })
+  @ApiBody({ type: UpdateAccountStatusDto })
+  @Auditory('User')
+  async updateAccountStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateAccountStatusDto,
+    @Request() req,
+  ): Promise<UserResponseDto> {
+    const userRole = req.user?.role;
+    if (userRole !== 'admin' && userRole !== 'subadmin') {
+      throw new ForbiddenException(
+        'Solo administradores pueden cambiar el estado de una cuenta',
+      );
+    }
+    return this.usersService.updateAccountStatus(id, dto, req.user.id);
+  }
+}

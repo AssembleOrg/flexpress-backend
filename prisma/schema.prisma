@@ -38,6 +38,13 @@ model User {
   verifiedAt         DateTime?
   verifiedBy         String? // Admin user ID who verified
 
+  // Account-level sanction (the titular/account is the punishable unit).
+  // active by default so existing users are unaffected.
+  accountStatus     AccountStatus @default(active)
+  accountStatusNote String? // Motivo del warning/ban, visible al charter
+  accountStatusAt   DateTime?
+  accountStatusBy   String? // Admin user ID que aplicó la sanción
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -146,13 +153,18 @@ model CharterAvailability {
   charterId     String   @unique
   isAvailable   Boolean  @default(false)
   vehicleId     String?  @unique
+  // Active executor config: who represents the account while available.
+  // activeDriverId null = the account owner (titular) is driving.
+  activeDriverId  String?
+  activeHelperIds String[] @default([])
   lastToggledAt DateTime @default(now())
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   // Relations
-  charter User     @relation(fields: [charterId], references: [id])
-  vehicle Vehicle? @relation(fields: [vehicleId], references: [id])
+  charter      User           @relation(fields: [charterId], references: [id])
+  vehicle      Vehicle?       @relation(fields: [vehicleId], references: [id])
+  activeDriver CharterDriver? @relation("ActiveDriver", fields: [activeDriverId], references: [id])
 
   @@map("charter_availability")
 }
@@ -364,6 +376,12 @@ enum VerificationStatus {
   rejected // Admin rejected
 }
 
+enum AccountStatus {
+  active // Cuenta operativa
+  warned // Advertencia activa (puede operar, ve un aviso)
+  banned // Cuenta bloqueada por el admin: no puede operar ni aparecer en búsqueda
+}
+
 // ─── New: Documents & Vehicles ───────────────────────────────────────────────
 
 model UserDocument {
@@ -518,6 +536,7 @@ model CharterDriver {
   charter         User                    @relation("CharterDrivers", fields: [charterId], references: [id])
   documents       CharterDriverDocument[]
   tripAssignments TripPersonnel[]         @relation("TripDriver")
+  activeIn        CharterAvailability[]   @relation("ActiveDriver")
 
   @@index([charterId])
   @@index([verificationStatus])

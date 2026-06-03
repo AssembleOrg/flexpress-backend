@@ -1,6 +1,6 @@
 import { BaseEntityDto } from '../../common/dto/base.dto';
 import { UserRole } from '../../common/enums';
-import { VerificationStatus } from '@prisma/client';
+import { VerificationStatus, AccountStatus } from '@prisma/client';
 
 export class UserResponseDto extends BaseEntityDto {
   email: string;
@@ -23,4 +23,8 @@ export class UserResponseDto extends BaseEntityDto {
   rejectionReason?: string;
   verifiedAt?: Date;
   verifiedBy?: string;
-} 
+
+  // Account-level sanction (visible to the charter)
+  accountStatus?: AccountStatus;
+  accountStatusNote?: string;
+}

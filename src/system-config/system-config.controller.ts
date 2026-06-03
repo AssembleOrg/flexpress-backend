@@ -48,6 +48,7 @@ export class SystemConfigController {
         creditsPerKm: { type: 'number', example: 15 },
         minimumCharge: { type: 'number', example: 50 },
         creditPrice: { type: 'number', example: 100 },
+        contactEmail: { type: 'string', example: 'contact@flexpress.com' },
       },
     },
   })

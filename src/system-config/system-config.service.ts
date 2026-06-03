@@ -149,23 +149,27 @@ export class SystemConfigService {
     creditsPerKm: number;
     minimumCharge: number;
     creditPrice: number;
+    contactEmail: string;
   }> {
-    const [baseRateConfig, minChargeConfig, creditPriceConfig] = await Promise.all([
-      this.prisma.systemConfig.findUnique({
-        where: { key: 'pricing_base_rate_per_km' },
-      }),
-      this.prisma.systemConfig.findUnique({
-        where: { key: 'pricing_minimum_charge' },
-      }),
-      this.prisma.systemConfig.findUnique({
-        where: { key: 'credit_price' },
-      }),
-    ]);
+    const [baseRateConfig, minChargeConfig, creditPriceConfig, contactEmail] =
+      await Promise.all([
+        this.prisma.systemConfig.findUnique({
+          where: { key: 'pricing_base_rate_per_km' },
+        }),
+        this.prisma.systemConfig.findUnique({
+          where: { key: 'pricing_minimum_charge' },
+        }),
+        this.prisma.systemConfig.findUnique({
+          where: { key: 'credit_price' },
+        }),
+        this.getContactEmail(),
+      ]);
 
     return {
       creditsPerKm: baseRateConfig ? parseFloat(baseRateConfig.value) : 15,
       minimumCharge: minChargeConfig ? parseFloat(minChargeConfig.value) : 50,
       creditPrice: creditPriceConfig ? parseFloat(creditPriceConfig.value) : 100,
+      contactEmail,
     };
   }
-} 
+}

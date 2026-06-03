@@ -46,6 +46,12 @@ export interface AvailableCharter {
   vehicleModel?: string | null;
   vehiclePlate?: string | null;
   vehicleYear?: number | null;
+  // Ejecutor activo: el conductor (extra o titular) que representa hoy a la
+  // cuenta. Es lo que el cliente ve antes de elegir.
+  activeDriverName: string;
+  activeDriverPhone: string | null;
+  activeDriverAvatar: string | null;
+  isTitularDriving: boolean;
   driversCount: number;
   helpersCount: number;
   // true si el charter ya está atendiendo otro viaje (match accepted o trip
@@ -160,6 +166,7 @@ export class TravelMatchingService {
         role: 'charter',
         deletedAt: null,
         verificationStatus: 'verified', // Only verified charters can appear in searches
+        accountStatus: { not: 'banned' }, // Cuentas bloqueadas no aparecen en búsqueda
         originLatitude: { not: null },
         originLongitude: { not: null },
         credits: { gte: 2 }, // Solo charters con créditos suficientes para aceptar
@@ -174,6 +181,7 @@ export class TravelMatchingService {
         charterAvailability: {
           include: {
             vehicle: true,
+            activeDriver: true,
           },
         },
         _count: {
@@ -225,6 +233,20 @@ export class TravelMatchingService {
           pricingConfig,
         );
 
+        // Ejecutor activo (la cara de la oferta): el conductor extra elegido al
+        // ponerse disponible, o el titular como fallback. Es lo que el cliente
+        // ve ANTES de elegir → transparencia.
+        const activeDriver = charter.charterAvailability?.activeDriver;
+        const activeDriverName = activeDriver
+          ? `${activeDriver.firstName} ${activeDriver.lastName}`.trim()
+          : charter.name;
+        const activeDriverPhone = activeDriver
+          ? (activeDriver.phone ?? null)
+          : charter.number;
+        const activeDriverAvatar = activeDriver
+          ? (activeDriver.photoUrl ?? null)
+          : charter.avatar;
+
         chartersWithDistance.push({
           charterId: charter.id,
           charterName: charter.name,
@@ -242,6 +264,10 @@ export class TravelMatchingService {
           vehicleModel: charter.charterAvailability?.vehicle?.model ?? null,
           vehiclePlate: charter.charterAvailability?.vehicle?.plate ?? null,
           vehicleYear: charter.charterAvailability?.vehicle?.year ?? null,
+          activeDriverName,
+          activeDriverPhone,
+          activeDriverAvatar,
+          isTitularDriving: !activeDriver,
           driversCount: (charter as any)._count?.charterDrivers ?? 0,
           helpersCount: (charter as any)._count?.charterHelpers ?? 0,
           isOnTrip: false, // se anota abajo en batch
@@ -505,45 +531,38 @@ export class TravelMatchingService {
         );
       }
 
-      // Validar personal asignado (driverId + helperIds)
+      // El personal del viaje YA fue elegido por el charter al ponerse
+      // disponible (config activa en CharterAvailability). Aquí solo lo leemos
+      // para armar el snapshot inmutable: lo que el cliente vio = lo que viene.
+      const availability = await this.prisma.charterAvailability.findUnique({
+        where: { charterId },
+        select: { activeDriverId: true, activeHelperIds: true },
+      });
+
       let driverEntity: { id: string; firstName: string; lastName: string; phone: string | null } | null = null;
-      if (dto.driverId) {
+      if (availability?.activeDriverId) {
         const driver = await this.prisma.charterDriver.findFirst({
-          where: { id: dto.driverId, charterId, deletedAt: null },
+          where: { id: availability.activeDriverId, charterId, deletedAt: null },
         });
-        if (!driver) {
-          throw new BadRequestException('Conductor no encontrado o no pertenece al charter');
+        // Si la config quedó inconsistente (conductor borrado), caemos al
+        // titular en vez de fallar: el viaje sigue siendo de la cuenta.
+        if (driver) {
+          driverEntity = {
+            id: driver.id,
+            firstName: driver.firstName,
+            lastName: driver.lastName,
+            phone: driver.phone,
+          };
         }
-        if (driver.verificationStatus !== 'verified' || !driver.isEnabled) {
-          throw new BadRequestException('El conductor seleccionado no está verificado y habilitado');
-        }
-        driverEntity = {
-          id: driver.id,
-          firstName: driver.firstName,
-          lastName: driver.lastName,
-          phone: driver.phone,
-        };
       }
 
       const helperEntities: Array<{ id: string; firstName: string; lastName: string }> = [];
-      if (dto.helperIds && dto.helperIds.length > 0) {
-        if (dto.helperIds.length > (match.workersCount || 0)) {
-          throw new BadRequestException(
-            `Máximo ${match.workersCount} ayudante(s) según lo solicitado por el cliente`,
-          );
-        }
+      const activeHelperIds = availability?.activeHelperIds ?? [];
+      if (activeHelperIds.length > 0) {
         const helpers = await this.prisma.charterHelper.findMany({
-          where: { id: { in: dto.helperIds }, charterId, deletedAt: null },
+          where: { id: { in: activeHelperIds }, charterId, deletedAt: null },
         });
-        if (helpers.length !== dto.helperIds.length) {
-          throw new BadRequestException('Uno o más ayudantes no pertenecen al charter');
-        }
         for (const h of helpers) {
-          if (h.verificationStatus !== 'verified' || !h.isEnabled) {
-            throw new BadRequestException(
-              `El ayudante ${h.firstName} ${h.lastName} no está verificado y habilitado`,
-            );
-          }
           helperEntities.push({ id: h.id, firstName: h.firstName, lastName: h.lastName });
         }
       }
@@ -638,6 +657,7 @@ export class TravelMatchingService {
             createdAt: true,
           },
         },
+        personnel: true,
       },
     });
 
@@ -1008,6 +1028,15 @@ export class TravelMatchingService {
       );
     }
 
+    // Cuenta bloqueada por el admin: no puede ponerse disponible.
+    if (dto.isAvailable && charter.accountStatus === 'banned') {
+      throw new BadRequestException(
+        charter.accountStatusNote
+          ? `Tu cuenta está bloqueada: ${charter.accountStatusNote}`
+          : 'Tu cuenta está bloqueada. Contactá con soporte.',
+      );
+    }
+
     if (!charter.originLatitude || !charter.originLongitude) {
       throw new BadRequestException(
         'El chófer debe configurar su ubicación de origen antes de estar disponible',
@@ -1020,9 +1049,39 @@ export class TravelMatchingService {
       );
     }
 
-    if (dto.isAvailable && dto.vehicleId) {
+    // Config activa "efectiva": si al (re)activarse el front no manda
+    // conductor/vehículo explícitos (ej: botones "Volver a mi zona"), heredamos
+    // la última config guardada y la revalidamos abajo. Así no se pierde el
+    // conductor elegido entre viajes.
+    const existing = await this.prisma.charterAvailability.findUnique({
+      where: { charterId },
+      select: { vehicleId: true, activeDriverId: true, activeHelperIds: true },
+    });
+
+    const sentExplicitConfig =
+      dto.activeDriverId !== undefined ||
+      dto.activeHelperIds !== undefined ||
+      dto.vehicleId !== undefined;
+
+    const effectiveVehicleId = dto.isAvailable
+      ? sentExplicitConfig
+        ? (dto.vehicleId ?? null)
+        : (existing?.vehicleId ?? null)
+      : null;
+    const effectiveDriverId = dto.isAvailable
+      ? sentExplicitConfig
+        ? (dto.activeDriverId ?? null)
+        : (existing?.activeDriverId ?? null)
+      : null;
+    const effectiveHelperIds = dto.isAvailable
+      ? sentExplicitConfig
+        ? (dto.activeHelperIds ?? [])
+        : (existing?.activeHelperIds ?? [])
+      : [];
+
+    if (dto.isAvailable && effectiveVehicleId) {
       const vehicle = await this.prisma.vehicle.findUnique({
-        where: { id: dto.vehicleId },
+        where: { id: effectiveVehicleId },
       });
 
       if (!vehicle || vehicle.charterId !== charterId) {
@@ -1036,7 +1095,7 @@ export class TravelMatchingService {
       }
     }
 
-    if (dto.isAvailable && !dto.vehicleId) {
+    if (dto.isAvailable && !effectiveVehicleId) {
       const verifiedVehicle = await this.prisma.vehicle.findFirst({
         where: {
           charterId,
@@ -1051,19 +1110,77 @@ export class TravelMatchingService {
       }
     }
 
-    // Upsert availability
+    // Validar config activa (conductor + ayudantes) al activarse.
+    // El conductor extra y su vehículo van de la mano: si hay un conductor
+    // extra activo, el vehículo es obligatorio. El titular (sin driver) sigue
+    // como hasta ahora. Esto revalida también la config HEREDADA en una
+    // reactivación, de modo que un conductor deshabilitado entremedio se
+    // detecte con un mensaje claro.
+    if (dto.isAvailable && effectiveDriverId) {
+      if (!effectiveVehicleId) {
+        throw new BadRequestException(
+          'Para activarte con un conductor extra debés seleccionar también su vehículo.',
+        );
+      }
+
+      const driver = await this.prisma.charterDriver.findFirst({
+        where: { id: effectiveDriverId, charterId, deletedAt: null },
+      });
+      if (!driver) {
+        throw new BadRequestException(
+          'El conductor activo ya no existe o no pertenece a tu cuenta. Volvé a elegir un conductor.',
+        );
+      }
+      if (driver.verificationStatus !== 'verified' || !driver.isEnabled) {
+        throw new BadRequestException(
+          `El conductor ${driver.firstName} ${driver.lastName} ya no está disponible (deshabilitado o sin verificar). Elegí otro conductor.`,
+        );
+      }
+    }
+
+    if (dto.isAvailable && effectiveHelperIds.length > 0) {
+      const helpers = await this.prisma.charterHelper.findMany({
+        where: { id: { in: effectiveHelperIds }, charterId, deletedAt: null },
+      });
+      if (helpers.length !== effectiveHelperIds.length) {
+        throw new BadRequestException(
+          'Uno o más ayudantes activos ya no existen o no pertenecen a tu cuenta. Revisá tu selección.',
+        );
+      }
+      for (const h of helpers) {
+        if (h.verificationStatus !== 'verified' || !h.isEnabled) {
+          throw new BadRequestException(
+            `El ayudante ${h.firstName} ${h.lastName} ya no está disponible (deshabilitado o sin verificar).`,
+          );
+        }
+      }
+    }
+
+    // Upsert availability.
+    // Al activarse, persistimos la config efectiva (conductor + vehículo +
+    // ayudantes), ya sea la enviada explícitamente o la heredada/revalidada.
+    // Al desactivarse, CONSERVAMOS la última config para reusarla en la próxima
+    // reactivación (ej: "Volver a mi zona"); solo cambia isAvailable.
+    const activeConfig = dto.isAvailable
+      ? {
+          vehicleId: effectiveVehicleId,
+          activeDriverId: effectiveDriverId,
+          activeHelperIds: effectiveHelperIds,
+        }
+      : {};
+
     const availability = await this.prisma.charterAvailability.upsert({
       where: { charterId },
       create: {
         charterId,
         isAvailable: dto.isAvailable,
-        vehicleId: dto.vehicleId ?? null,
         lastToggledAt: nowInBuenosAires().toJSDate(),
+        ...activeConfig,
       },
       update: {
         isAvailable: dto.isAvailable,
-        vehicleId: dto.vehicleId ?? null,
         lastToggledAt: nowInBuenosAires().toJSDate(),
+        ...activeConfig,
       },
     });
 
