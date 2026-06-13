@@ -10,8 +10,8 @@ import {
 import { UserRole } from '../../common/enums';
 import { Transform } from 'class-transformer';
 
-// Debe coincidir con CANONICAL_AR_PHONE_REGEX del frontend (lib/utils/phone.ts).
-const AR_PHONE_REGEX = /^\+54 9 \d{2} \d{4}-\d{4}$/;
+// Acepta formato canónico móvil (+54 9 11 1234-5678) y fijo (+54 11 1234-5678).
+const AR_PHONE_REGEX = /^\+54( 9)? \d{2,4} \d{3,4}-\d{4}$/;
 
 export class CreateUserDto {
   @Transform(({ value }: { value: unknown }) =>
