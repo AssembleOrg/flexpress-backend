@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsEnum,
   IsNumber,
+  IsBoolean,
   Min,
   Matches,
 } from 'class-validator';
@@ -85,4 +86,13 @@ export class UpdateUserDto {
   @IsNumber()
   @Min(0)
   pricePerKm?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  pricePerWaitBlock?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  chargesReturnTrip?: boolean;
 }

@@ -29,6 +29,12 @@ import { ConversationsService } from 'src/conversations/conversations.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationPriority } from '@prisma/client';
 
+// Estimado del viaje en PESOS ARS (informativo). Estos defaults aplican si no
+// hay config en SystemConfig. NO se mezclan con los créditos (matching).
+const DEFAULT_MIN_PRICE_ARS = 20000; // mínimo de todo viaje
+const DEFAULT_WAIT_BLOCK_MINUTES = 30; // duración del bloque de espera fija
+const RETURN_TRIP_FACTOR = 0.5; // la vuelta se cobra al 50% del $/km
+
 export interface AvailableCharter {
   charterId: string;
   charterName: string;
@@ -42,6 +48,15 @@ export interface AvailableCharter {
   totalDistance: number;
   estimatedCredits: number;
   pricePerKm: number | null;
+  // Estimado del viaje en PESOS ARS (informativo, aproximado por línea recta).
+  // null si el charter no configuró pricePerKm. Desglosado para UX premium.
+  pricePerWaitBlock: number | null;
+  chargesReturnTrip: boolean;
+  estimatedPriceArs: number | null; // total (con mínimo aplicado)
+  estimatedPriceIdaArs: number | null; // tramo ida (charter→pickup→destino)
+  estimatedPriceWaitArs: number | null; // tramo espera/carga
+  estimatedPriceReturnArs: number | null; // tramo vuelta (destino→charter, 50%)
+  returnDistanceKm: number | null; // km del tramo de vuelta
   vehicleBrand?: string | null;
   vehicleModel?: string | null;
   vehiclePlate?: string | null;
@@ -210,6 +225,8 @@ export class TravelMatchingService {
 
     // 🔧 FIX N+1: Load pricing config ONCE before the loop
     const pricingConfig = await this.loadPricingConfig();
+    // Mínimo del estimado en pesos ARS (independiente de los créditos).
+    const minPriceArs = await this.loadMinPriceArs();
 
     for (const charter of availableCharters) {
       if (!charter.originLatitude || !charter.originLongitude) continue;
@@ -231,6 +248,18 @@ export class TravelMatchingService {
           distances.total,
           workersCount,
           pricingConfig,
+        );
+
+        // Estimado en pesos ARS (informativo, paralelo a los créditos).
+        const priceArs = this.calculateEstimatedPriceArs(
+          distances.total, // ida = charter→pickup + pickup→destino
+          distances.destinationToCharter, // vuelta
+          {
+            pricePerKm: charter.pricePerKm ?? null,
+            pricePerWaitBlock: charter.pricePerWaitBlock ?? null,
+            chargesReturnTrip: charter.chargesReturnTrip ?? false,
+          },
+          minPriceArs,
         );
 
         // Ejecutor activo (la cara de la oferta): el conductor extra elegido al
@@ -260,6 +289,13 @@ export class TravelMatchingService {
           totalDistance: distances.total,
           estimatedCredits,
           pricePerKm: charter.pricePerKm ?? null,
+          pricePerWaitBlock: charter.pricePerWaitBlock ?? null,
+          chargesReturnTrip: charter.chargesReturnTrip ?? false,
+          estimatedPriceArs: priceArs.total,
+          estimatedPriceIdaArs: priceArs.ida,
+          estimatedPriceWaitArs: priceArs.wait,
+          estimatedPriceReturnArs: priceArs.return,
+          returnDistanceKm: distances.destinationToCharter,
           vehicleBrand: charter.charterAvailability?.vehicle?.brand ?? null,
           vehicleModel: charter.charterAvailability?.vehicle?.model ?? null,
           vehiclePlate: charter.charterAvailability?.vehicle?.plate ?? null,
@@ -345,6 +381,18 @@ export class TravelMatchingService {
   }
 
   /**
+   * Mínimo del estimado en PESOS ARS. Reusa la clave 'pricing_minimum_charge'
+   * (cuyo significado pasó a ser pesos; ya no alimenta ningún cobro en créditos).
+   */
+  private async loadMinPriceArs(): Promise<number> {
+    const config = await this.prisma.systemConfig.findUnique({
+      where: { key: 'pricing_minimum_charge' },
+    });
+    const value = config ? parseFloat(config.value) : NaN;
+    return Number.isFinite(value) && value > 0 ? value : DEFAULT_MIN_PRICE_ARS;
+  }
+
+  /**
    * Calculate cost based on distance, workers and pricing config
    * @param pricingConfig - Pre-loaded pricing config (optional, will load if not provided)
    */
@@ -366,6 +414,55 @@ export class TravelMatchingService {
     const totalCost = distanceCost + workerCost;
 
     return Math.max(totalCost, config.minimumCharge);
+  }
+
+  /**
+   * Estimado del viaje en PESOS ARS (informativo, aproximado por línea recta).
+   * Independiente de los créditos (que son solo comisión de matchmaking).
+   *
+   *   ida    = (charter→pickup + pickup→destino) × pricePerKm
+   *   espera = pricePerWaitBlock (1 bloque fijo por viaje; 0 si no cobra)
+   *   vuelta = (destino→charter) × pricePerKm × 0.5  (solo si chargesReturnTrip)
+   *   total  = max(ida + espera + vuelta, mínimo $20.000)
+   *
+   * Devuelve null en todos los campos si el charter no configuró pricePerKm.
+   */
+  private calculateEstimatedPriceArs(
+    idaKm: number,
+    returnKm: number,
+    charter: {
+      pricePerKm: number | null;
+      pricePerWaitBlock: number | null;
+      chargesReturnTrip: boolean;
+    },
+    minPriceArs: number,
+  ): {
+    total: number | null;
+    ida: number | null;
+    wait: number | null;
+    return: number | null;
+  } {
+    // Sin tarifa por km configurada → no hay estimado (no se muestra).
+    if (charter.pricePerKm == null || charter.pricePerKm <= 0) {
+      return { total: null, ida: null, wait: null, return: null };
+    }
+
+    const pricePerKm = charter.pricePerKm;
+    const ida = idaKm * pricePerKm;
+    const wait = charter.pricePerWaitBlock ?? 0;
+    const ret = charter.chargesReturnTrip
+      ? returnKm * pricePerKm * RETURN_TRIP_FACTOR
+      : 0;
+
+    const subtotal = ida + wait + ret;
+    const total = Math.max(subtotal, minPriceArs);
+
+    return {
+      total: Math.round(total),
+      ida: Math.round(ida),
+      wait: Math.round(wait),
+      return: Math.round(ret),
+    };
   }
 
   /**

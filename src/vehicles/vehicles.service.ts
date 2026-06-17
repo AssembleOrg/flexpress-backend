@@ -45,6 +45,9 @@ export class VehiclesService {
   async updateVehicle(vehicleId: string, charterId: string, dto: UpdateVehicleDto) {
     const vehicle = await this.findVehicleOrFail(vehicleId);
     this.assertOwnership(vehicle.charterId, charterId);
+    // Editar devuelve el vehículo a 'pending' (re-verificación): no se permite
+    // sobre el vehículo con el que el charter está disponible ahora mismo.
+    await this.assertVehicleNotActiveWhileAvailable(vehicleId, charterId);
 
     return this.prisma.vehicle.update({
       where: { id: vehicleId },
@@ -63,6 +66,12 @@ export class VehiclesService {
       );
     }
 
+    // Solo bloqueamos al DESHABILITAR el vehículo activo mientras está
+    // disponible. Habilitar otro vehículo no afecta la disponibilidad actual.
+    if (vehicle.isEnabled) {
+      await this.assertVehicleNotActiveWhileAvailable(vehicleId, charterId);
+    }
+
     return this.prisma.vehicle.update({
       where: { id: vehicleId },
       data: { isEnabled: !vehicle.isEnabled },
@@ -72,6 +81,7 @@ export class VehiclesService {
   async deleteVehicle(vehicleId: string, charterId: string) {
     const vehicle = await this.findVehicleOrFail(vehicleId);
     this.assertOwnership(vehicle.charterId, charterId);
+    await this.assertVehicleNotActiveWhileAvailable(vehicleId, charterId);
 
     return this.prisma.vehicle.update({
       where: { id: vehicleId },
@@ -151,6 +161,27 @@ export class VehiclesService {
   private assertOwnership(vehicleCharterId: string, requestingCharterId: string) {
     if (vehicleCharterId !== requestingCharterId) {
       throw new ForbiddenException('No tenés permiso sobre este vehículo');
+    }
+  }
+
+  /**
+   * Impide modificar el vehículo con el que el charter está disponible en este
+   * momento. Si se permitiera, charterAvailability.vehicleId quedaría apuntando
+   * a un vehículo deshabilitado/pendiente/borrado y el charter se volvería
+   * invisible o inconsistente en las búsquedas.
+   */
+  private async assertVehicleNotActiveWhileAvailable(
+    vehicleId: string,
+    charterId: string,
+  ) {
+    const availability = await this.prisma.charterAvailability.findUnique({
+      where: { charterId },
+      select: { isAvailable: true, vehicleId: true },
+    });
+    if (availability?.isAvailable && availability.vehicleId === vehicleId) {
+      throw new BadRequestException(
+        'Desconectate antes de modificar el vehículo con el que estás disponible.',
+      );
     }
   }
 }

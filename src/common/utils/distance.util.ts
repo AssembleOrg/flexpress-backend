@@ -56,15 +56,20 @@ export function calculateTravelDistances(
 ): {
   charterToPickup: number;
   pickupToDestination: number;
+  destinationToCharter: number;
   total: number;
 } {
   const charterToPickup = calculateDistance(charterOrigin, pickupLocation);
   const pickupToDestination = calculateDistance(pickupLocation, destination);
+  // Tramo de vuelta (destino → origen del charter), usado para el estimado
+  // informativo del viaje de regreso (se cobra al 50% si el charter lo activa).
+  const destinationToCharter = calculateDistance(destination, charterOrigin);
   const total = charterToPickup + pickupToDestination;
 
   return {
     charterToPickup: Math.round(charterToPickup * 100) / 100,
     pickupToDestination: Math.round(pickupToDestination * 100) / 100,
+    destinationToCharter: Math.round(destinationToCharter * 100) / 100,
     total: Math.round(total * 100) / 100,
   };
 }

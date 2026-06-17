@@ -30,7 +30,9 @@ model User {
   originAddress   String? // Human-readable address (e.g., "St Martin 425, Buenos Aires")
   originLatitude  String? // Charter's fixed starting location
   originLongitude String? // Charter's fixed starting location
-  pricePerKm      Float? // Precio informativo por km configurado por el charter
+  pricePerKm        Float? // Precio informativo por km (en pesos ARS) configurado por el charter
+  pricePerWaitBlock Float? // Precio (pesos ARS) por el bloque fijo de espera/carga del viaje. null/0 = no cobra
+  chargesReturnTrip Boolean @default(false) // Si cobra el viaje de vuelta (destino → su origen) al 50% del $/km
 
   // Charter verification (default verified so existing users are not affected)
   verificationStatus VerificationStatus @default(verified)
