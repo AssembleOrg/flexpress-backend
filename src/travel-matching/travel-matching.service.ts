@@ -107,7 +107,7 @@ export class TravelMatchingService {
     const availableCharters = await this.findAvailableCharters(
       pickup,
       destination,
-      dto.maxRadiusKm || 30,
+      dto.maxRadiusKm || 50,
       dto.workersCount || 0,
     );
 
@@ -121,7 +121,7 @@ export class TravelMatchingService {
         destinationAddress: dto.destinationAddress,
         destinationLatitude: dto.destinationLatitude,
         destinationLongitude: dto.destinationLongitude,
-        maxRadiusKm: dto.maxRadiusKm || 30,
+        maxRadiusKm: dto.maxRadiusKm || 50,
         workersCount: dto.workersCount || 0,
         cargoDescription: dto.cargoDescription ?? null,
         scheduledDate,
@@ -1063,7 +1063,7 @@ export class TravelMatchingService {
       dto.activeHelperIds !== undefined ||
       dto.vehicleId !== undefined;
 
-    const effectiveVehicleId = dto.isAvailable
+    let effectiveVehicleId = dto.isAvailable
       ? sentExplicitConfig
         ? (dto.vehicleId ?? null)
         : (existing?.vehicleId ?? null)
@@ -1095,17 +1095,30 @@ export class TravelMatchingService {
       }
     }
 
+    // Sin vehículo efectivo al activarse: no se permite quedar disponible con
+    // vehicleId null (eso volvía al charter invisible en findAvailableCharters).
+    // Si hay exactamente un vehículo verificado, lo autoseleccionamos; si hay
+    // varios, exigimos que el charter elija uno.
     if (dto.isAvailable && !effectiveVehicleId) {
-      const verifiedVehicle = await this.prisma.vehicle.findFirst({
+      const verifiedVehicles = await this.prisma.vehicle.findMany({
         where: {
           charterId,
           verificationStatus: 'verified',
         },
+        select: { id: true },
       });
 
-      if (!verifiedVehicle) {
+      if (verifiedVehicles.length === 0) {
         throw new BadRequestException(
           'Necesitás al menos un vehículo verificado para activarte.',
+        );
+      }
+
+      if (verifiedVehicles.length === 1) {
+        effectiveVehicleId = verifiedVehicles[0].id;
+      } else {
+        throw new BadRequestException(
+          'Seleccioná el vehículo con el que vas a estar disponible.',
         );
       }
     }

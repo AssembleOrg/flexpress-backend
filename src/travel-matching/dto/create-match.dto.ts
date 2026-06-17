@@ -27,8 +27,8 @@ export class CreateMatchDto {
   destinationLongitude: string;
 
   @ApiPropertyOptional({ 
-    description: 'Radio máximo de búsqueda en kilómetros', 
-    example: 30,
+    description: 'Radio máximo de búsqueda en kilómetros',
+    example: 50,
     minimum: 1,
     maximum: 100
   })
