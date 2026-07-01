@@ -9,6 +9,18 @@ export interface Coordinates {
 }
 
 /**
+ * Factor de circuito: aproxima la distancia real por calle a partir de la
+ * línea recta (Haversine). Calibrado para AMBA (~1.3 medido; usamos 1.25
+ * conservador). Ajustable con datos reales.
+ *
+ * Se aplica SOLO a las distancias del viaje (lo que se cobra y se muestra),
+ * en `calculateTravelDistances`. NO se aplica a `calculateDistance` ni a
+ * `isWithinRadius`, para que el filtro de radio (cercanía zona→origen) siga
+ * en línea recta y aparezca la mayor cantidad de charters posible.
+ */
+export const STREET_DISTANCE_FACTOR = 1.25;
+
+/**
  * Calculate the distance between two points on Earth using the Haversine formula
  * 
  * @param point1 - First coordinate point
@@ -59,11 +71,16 @@ export function calculateTravelDistances(
   destinationToCharter: number;
   total: number;
 } {
-  const charterToPickup = calculateDistance(charterOrigin, pickupLocation);
-  const pickupToDestination = calculateDistance(pickupLocation, destination);
+  // Distancias del viaje en km de calle estimados (Haversine × factor de
+  // circuito). El factor NO se aplica al filtro de radio (isWithinRadius).
+  const charterToPickup =
+    calculateDistance(charterOrigin, pickupLocation) * STREET_DISTANCE_FACTOR;
+  const pickupToDestination =
+    calculateDistance(pickupLocation, destination) * STREET_DISTANCE_FACTOR;
   // Tramo de vuelta (destino → origen del charter), usado para el estimado
   // informativo del viaje de regreso (se cobra al 50% si el charter lo activa).
-  const destinationToCharter = calculateDistance(destination, charterOrigin);
+  const destinationToCharter =
+    calculateDistance(destination, charterOrigin) * STREET_DISTANCE_FACTOR;
   const total = charterToPickup + pickupToDestination;
 
   return {

@@ -13,6 +13,7 @@ import {
   UpdateCharterOriginDto,
 } from './dto';
 import { RespondToMatchDto } from './dto/respond-to-match.dto';
+import { getCharterCreditCost } from './credit-cost.util';
 import {
   calculateTravelDistances,
   parseCoordinates,
@@ -619,10 +620,14 @@ export class TravelMatchingService {
     }
 
     if (accept) {
+      // Costo escalonado por distancia: se calcula UNA vez y se usa tanto en el
+      // guard como en el descuento de la TX, así el monto validado == cobrado.
+      const charterCost = getCharterCreditCost(match.distanceKm);
+
       // Verificar créditos suficientes antes de aceptar
-      if (!match.charter || match.charter.credits < 2) {
+      if (!match.charter || match.charter.credits < charterCost) {
         throw new BadRequestException(
-          'Necesitás al menos 2 créditos para aceptar esta solicitud',
+          `Necesitás al menos ${charterCost} créditos para aceptar esta solicitud`,
         );
       }
       if (!match.user || match.user.credits < 1) {
@@ -685,7 +690,7 @@ export class TravelMatchingService {
       await this.prisma.$transaction(async (tx) => {
         await tx.user.update({
           where: { id: charterId },
-          data: { credits: { decrement: 2 } },
+          data: { credits: { decrement: charterCost } },
         });
         await tx.user.update({
           where: { id: match.userId },
