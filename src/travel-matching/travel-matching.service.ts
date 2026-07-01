@@ -27,7 +27,7 @@ import {
 import { TravelMatchingGateway } from './travel-matching.gateway';
 import { ConversationsService } from 'src/conversations/conversations.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { NotificationPriority } from '@prisma/client';
+import { NotificationPriority, VehicleSize } from '@prisma/client';
 
 // Estimado del viaje en PESOS ARS (informativo). Estos defaults aplican si no
 // hay config en SystemConfig. NO se mezclan con los créditos (matching).
@@ -61,6 +61,7 @@ export interface AvailableCharter {
   vehicleModel?: string | null;
   vehiclePlate?: string | null;
   vehicleYear?: number | null;
+  vehicleSize?: VehicleSize | null;
   // Ejecutor activo: el conductor (extra o titular) que representa hoy a la
   // cuenta. Es lo que el cliente ve antes de elegir.
   activeDriverName: string;
@@ -300,6 +301,7 @@ export class TravelMatchingService {
           vehicleModel: charter.charterAvailability?.vehicle?.model ?? null,
           vehiclePlate: charter.charterAvailability?.vehicle?.plate ?? null,
           vehicleYear: charter.charterAvailability?.vehicle?.year ?? null,
+          vehicleSize: charter.charterAvailability?.vehicle?.size ?? null,
           activeDriverName,
           activeDriverPhone,
           activeDriverAvatar,
@@ -563,6 +565,7 @@ export class TravelMatchingService {
                     model: true,
                     plate: true,
                     year: true,
+                    size: true,
                   },
                 },
               },
@@ -924,6 +927,7 @@ export class TravelMatchingService {
                     model: true,
                     plate: true,
                     year: true,
+                    size: true,
                   },
                 },
               },

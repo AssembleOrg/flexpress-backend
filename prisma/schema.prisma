@@ -416,6 +416,7 @@ model Vehicle {
   model              String?
   year               Int?
   alias              String?
+  size               VehicleSize        @default(chico)
   isEnabled          Boolean            @default(false)
   verificationStatus VerificationStatus @default(pending)
   rejectionReason    String?
@@ -475,6 +476,12 @@ enum VehicleDocumentType {
   cedula
   seguro
   vtv
+}
+
+enum VehicleSize {
+  chico
+  mediano
+  grande
 }
 
 enum NotificationPriority {
