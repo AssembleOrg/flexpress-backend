@@ -101,6 +101,52 @@ export class TravelMatchingService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
+    // El cliente paga 1 crédito al confirmarse el viaje (ver respondToMatch).
+    // Validamos acá para no permitir crear búsquedas que nunca podrán cerrarse
+    // (ej: recuperación automática tras cancelar/expirar sin créditos).
+    if (user.credits < 1) {
+      throw new BadRequestException(
+        'No tenés créditos suficientes para crear una búsqueda',
+      );
+    }
+
+    // Unicidad: un cliente no puede tener dos búsquedas vivas a la vez. Al crear
+    // una nueva, superseder (cancelar) cualquier búsqueda previa en 'searching'
+    // o 'pending' del mismo usuario. Esto cubre los caminos de recuperación
+    // automática y evita dobles matches / dobles reservas.
+    const supersededPending = await this.prisma.travelMatch.findMany({
+      where: { userId, status: 'pending', charterId: { not: null } },
+      select: { id: true, charterId: true },
+    });
+    await this.prisma.travelMatch.updateMany({
+      where: { userId, status: { in: ['searching', 'pending'] } },
+      data: { status: 'cancelled' },
+    });
+    // Retractar el pedido a los chóferes que esperaban en las búsquedas
+    // superseidas, para que no les quede un pedido fantasma.
+    for (const prev of supersededPending) {
+      if (!prev.charterId) continue;
+      try {
+        await this.prisma.notification.updateMany({
+          where: {
+            userId: prev.charterId,
+            type: 'match_selected',
+            isRead: false,
+            data: { path: ['matchId'], equals: prev.id },
+          },
+          data: { isRead: true, readAt: new Date() },
+        });
+        this.travelMatchingGateway.notifyMatchUpdate(prev.charterId, {
+          matchId: prev.id,
+          status: 'cancelled',
+        });
+      } catch (err) {
+        this.logger.error(
+          `Retracción de búsqueda superseida fallida (no crítico): ${err}`,
+        );
+      }
+    }
+
     // Parse coordinates
     const pickup = parseCoordinates(dto.pickupLatitude, dto.pickupLongitude);
     const destination = parseCoordinates(
@@ -254,7 +300,7 @@ export class TravelMatchingService {
 
         // Estimado en pesos ARS (informativo, paralelo a los créditos).
         const priceArs = this.calculateEstimatedPriceArs(
-          distances.total, // ida = charter→pickup + pickup→destino
+          distances.pickupToDestination, // ida = SOLO el viaje del cliente (no se le cobra el traslado del charter hasta el pickup)
           distances.destinationToCharter, // vuelta
           {
             pricePerKm: charter.pricePerKm ?? null,
@@ -423,10 +469,17 @@ export class TravelMatchingService {
    * Estimado del viaje en PESOS ARS (informativo, aproximado por línea recta).
    * Independiente de los créditos (que son solo comisión de matchmaking).
    *
-   *   ida    = (charter→pickup + pickup→destino) × pricePerKm
+   *   ida    = (pickup→destino) × pricePerKm  ← SOLO el viaje del cliente; no se
+   *            le cobra el traslado del charter hasta el pickup.
    *   espera = pricePerWaitBlock (1 bloque fijo por viaje; 0 si no cobra)
    *   vuelta = (destino→charter) × pricePerKm × 0.5  (solo si chargesReturnTrip)
-   *   total  = max(ida + espera + vuelta, mínimo $20.000)
+   *   total  = max(ida, mínimo $20.000)
+   *
+   * El `total` que ve el cliente es SOLO la ida pickup→destino (aproximado por
+   * km, coincide con la "distancia estimada" que se le muestra). Espera y vuelta
+   * se siguen calculando y se devuelven aparte (wait/return) pero NO suman al
+   * total mostrado: son posibles recargos que el cliente coordina con el
+   * charter, no un desglose sumado.
    *
    * Devuelve null en todos los campos si el charter no configuró pricePerKm.
    */
@@ -457,8 +510,9 @@ export class TravelMatchingService {
       ? returnKm * pricePerKm * RETURN_TRIP_FACTOR
       : 0;
 
-    const subtotal = ida + wait + ret;
-    const total = Math.max(subtotal, minPriceArs);
+    // El cliente solo ve el aproximado de la ida (con mínimo). Espera y vuelta
+    // se devuelven aparte pero no suman al total mostrado.
+    const total = Math.max(ida, minPriceArs);
 
     return {
       total: Math.round(total),
@@ -487,11 +541,25 @@ export class TravelMatchingService {
       );
     }
 
-    if (match.status !== 'searching') {
+    // El cliente puede (re)seleccionar mientras el match no tenga efectos
+    // irreversibles: 'searching' (primera vez), 'pending' (cambia de chófer sin
+    // esperar más) o 'rejected' (el chófer anterior no aceptó). Quedan excluidos
+    // 'accepted'/'completed' (créditos ya cobrados + conversación creada) y
+    // 'cancelled'. Reseleccionar desde estos estados NO cobra créditos (el cobro
+    // ocurre solo al aceptar, ver respondToMatch).
+    const RESELECTABLE_STATUSES = ['searching', 'pending', 'rejected'];
+    if (!RESELECTABLE_STATUSES.includes(match.status)) {
       throw new BadRequestException(
         `La búsqueda está en estado ${match.status}, no se puede seleccionar chófer`,
       );
     }
+
+    // Si veníamos de una selección previa (pending/rejected) apuntando a otro
+    // chófer, guardamos su id para retractarle el pedido fantasma más abajo.
+    const previousCharterId =
+      match.charterId && match.charterId !== dto.charterId
+        ? match.charterId
+        : null;
 
     // Verify charter exists and is available
     const charter = await this.prisma.user.findUnique({
@@ -588,6 +656,31 @@ export class TravelMatchingService {
       });
     } catch (err) {
       this.logger.error(`Notificación match_selected fallida (no crítico): ${err}`);
+    }
+
+    // Reselección: retractar el pedido al chófer anterior para que no le quede
+    // un "Nuevo pedido de viaje" fantasma. Marcamos su notificación previa como
+    // leída y le avisamos por socket que este match ya no es suyo.
+    if (previousCharterId) {
+      try {
+        await this.prisma.notification.updateMany({
+          where: {
+            userId: previousCharterId,
+            type: 'match_selected',
+            isRead: false,
+            data: { path: ['matchId'], equals: updatedMatch.id },
+          },
+          data: { isRead: true, readAt: new Date() },
+        });
+        this.travelMatchingGateway.notifyMatchUpdate(previousCharterId, {
+          matchId: updatedMatch.id,
+          status: 'cancelled',
+        });
+      } catch (err) {
+        this.logger.error(
+          `Retracción de pedido al chófer anterior fallida (no crítico): ${err}`,
+        );
+      }
     }
 
     return updatedMatch;
@@ -1106,6 +1199,31 @@ export class TravelMatchingService {
       where: { id: matchId },
       data: { status: 'cancelled' },
     });
+
+    // Si había un chófer con el pedido pendiente, avisarle que el cliente
+    // canceló para que no le quede un pedido fantasma (retracta su notificación
+    // y le emite el cambio de estado por socket).
+    if (match.status === 'pending' && match.charterId) {
+      try {
+        await this.prisma.notification.updateMany({
+          where: {
+            userId: match.charterId,
+            type: 'match_selected',
+            isRead: false,
+            data: { path: ['matchId'], equals: updated.id },
+          },
+          data: { isRead: true, readAt: new Date() },
+        });
+        this.travelMatchingGateway.notifyMatchUpdate(match.charterId, {
+          matchId: updated.id,
+          status: 'cancelled',
+        });
+      } catch (err) {
+        this.logger.error(
+          `Aviso de cancelación al chófer fallido (no crítico): ${err}`,
+        );
+      }
+    }
 
     return {
       success: true,
