@@ -9,7 +9,7 @@ import {
   Matches,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { UserRole, VerificationStatus } from '../../common/enums';
+import { UserRole } from '../../common/enums';
 
 // Acepta formato canónico móvil (+54 9 11 1234-5678) y fijo (+54 11 1234-5678).
 const AR_PHONE_REGEX = /^\+54( 9)? \d{2,4} \d{3,4}-\d{4}$/;
@@ -72,14 +72,10 @@ export class UpdateUserDto {
   @IsString()
   originLongitude?: string;
 
-  // Charter verification fields
-  @IsOptional()
-  @IsEnum(VerificationStatus)
-  verificationStatus?: VerificationStatus;
-
-  @IsOptional()
-  @IsString()
-  rejectionReason?: string;
+  // NOTA: verificationStatus y rejectionReason NO se exponen acá a propósito.
+  // Solo el admin puede setearlos vía PATCH /users/:id/verify, y el charter
+  // reabre su propio caso vía POST /users/me/resubmit-verification. Exponerlos
+  // aquí permitiría que el propio usuario se auto-verifique (PATCH /users/:id).
 
   // Precio por km del charter
   @IsOptional()

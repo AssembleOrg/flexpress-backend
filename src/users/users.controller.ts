@@ -255,6 +255,24 @@ export class UsersController {
     return this.usersService.findPendingCharters();
   }
 
+  @Post('me/resubmit-verification')
+  @ApiOperation({
+    summary: 'Resubmit verification (rejected charter reopens its own case)',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Verification reopened; charter is back to pending',
+    type: UserResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Account is not in rejected state / not a charter',
+  })
+  @Auditory('User')
+  async resubmitVerification(@Request() req): Promise<UserResponseDto> {
+    return this.usersService.resubmitVerification(req.user.id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a user by ID' })
   @ApiParam({ name: 'id', description: 'User ID' })

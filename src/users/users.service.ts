@@ -259,6 +259,61 @@ export class UsersService {
     return users as UserResponseDto[];
   }
 
+  /**
+   * Reenvío self-service: un charter RECHAZADO reabre su propio caso de
+   * verificación (vuelve a 'pending') tras reenviar documentación. Con esto
+   * reaparece en la cola de pendientes y el admin puede re-revisarlo
+   * (verifyCharter solo opera sobre charters en 'pending').
+   */
+  async resubmitVerification(userId: string): Promise<UserResponseDto> {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    if (user.role !== 'charter') {
+      throw new BadRequestException('Este usuario no es un charter');
+    }
+
+    if (user.verificationStatus !== 'rejected') {
+      throw new BadRequestException('Tu cuenta no está en estado rechazado');
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        verificationStatus: 'pending',
+        rejectionReason: null,
+        verifiedAt: null,
+        verifiedBy: null,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        address: true,
+        credits: true,
+        documentationFrontUrl: true,
+        documentationBackUrl: true,
+        number: true,
+        avatar: true,
+        verificationStatus: true,
+        rejectionReason: true,
+        verifiedAt: true,
+        verifiedBy: true,
+        createdAt: true,
+        updatedAt: true,
+        deletedAt: true,
+      },
+    });
+
+    return updated as UserResponseDto;
+  }
+
   async verifyCharter(
     charterId: string,
     verifyDto: VerifyCharterDto,

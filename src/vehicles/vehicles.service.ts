@@ -49,9 +49,16 @@ export class VehiclesService {
     // sobre el vehículo con el que el charter está disponible ahora mismo.
     await this.assertVehicleNotActiveWhileAvailable(vehicleId, charterId);
 
+    // Si el vehículo estaba rechazado, corregirlo lo devuelve a la cola de
+    // re-verificación del admin (pending) y limpia el motivo anterior.
+    const data =
+      vehicle.verificationStatus === 'rejected'
+        ? { ...dto, verificationStatus: 'pending' as const, rejectionReason: null }
+        : dto;
+
     return this.prisma.vehicle.update({
       where: { id: vehicleId },
-      data: dto,
+      data,
       include: { documents: { where: { deletedAt: null } } },
     });
   }
@@ -95,14 +102,30 @@ export class VehiclesService {
     const vehicle = await this.findVehicleOrFail(vehicleId);
     this.assertOwnership(vehicle.charterId, charterId);
 
-    return this.prisma.vehicleDocument.create({
-      data: {
-        vehicleId,
-        type: dto.type,
-        fileUrl: dto.fileUrl,
-        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
-      },
-    });
+    // Re-subir un documento de un vehículo rechazado lo devuelve a pending
+    // para que el admin lo re-revise. Atómico: crear doc + resetear estado.
+    const wasRejected = vehicle.verificationStatus === 'rejected';
+
+    const [document] = await this.prisma.$transaction([
+      this.prisma.vehicleDocument.create({
+        data: {
+          vehicleId,
+          type: dto.type,
+          fileUrl: dto.fileUrl,
+          expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+        },
+      }),
+      ...(wasRejected
+        ? [
+            this.prisma.vehicle.update({
+              where: { id: vehicleId },
+              data: { verificationStatus: 'pending' as const, rejectionReason: null },
+            }),
+          ]
+        : []),
+    ]);
+
+    return document;
   }
 
   async getVehicleDocuments(vehicleId: string, charterId: string) {
