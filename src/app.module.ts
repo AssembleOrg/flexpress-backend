@@ -21,6 +21,7 @@ import { CharterPersonnelModule } from './charter-personnel/charter-personnel.mo
 import { NotificationsModule } from './notifications/notifications.module';
 import { PushModule } from './push/push.module';
 import { AvailabilityInquiriesModule } from './availability-inquiries/availability-inquiries.module';
+import { StorageModule } from './storage/storage.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 // import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { RequestLoggerInterceptor } from './common/interceptors/request-logger.interceptor';
@@ -67,6 +68,7 @@ import configuration from './config/configuration';
     NotificationsModule,
     PushModule,
     AvailabilityInquiriesModule,
+    StorageModule,
   ],
   controllers: [AppController],
   providers: [

@@ -21,4 +21,15 @@ export default () => ({
     privateKey: process.env.VAPID_PRIVATE_KEY,
     subject: process.env.VAPID_SUBJECT || 'mailto:admin@flexpress.com',
   },
+  spaces: {
+    endpoint: process.env.DO_SPACES_ENDPOINT, // https://nyc3.digitaloceanspaces.com
+    region: process.env.DO_SPACES_REGION || 'nyc3',
+    bucket: process.env.DO_SPACES_BUCKET,
+    accessKey: process.env.DO_SPACES_KEY,
+    secretKey: process.env.DO_SPACES_SECRET,
+    cdnBase: process.env.DO_SPACES_CDN_BASE, // https://<bucket>.<region>.cdn.digitaloceanspaces.com
+    env: process.env.SPACES_ENV || 'dev', // prefijo de entorno en el bucket
+    readTtl: parseInt(process.env.DO_SPACES_URL_TTL || '3600', 10), // lectura admin (1h)
+    uploadTtl: parseInt(process.env.DO_SPACES_UPLOAD_TTL || '300', 10), // PUT presign (5min)
+  },
 }); 

@@ -9,12 +9,14 @@ import {
 } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { AuthService } from '../auth/auth.service';
+import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     private prisma: PrismaService,
     private authService: AuthService,
+    private storageService: StorageService,
   ) {}
 
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
@@ -202,6 +204,36 @@ export class UsersService {
       where: { id },
       data: { deletedAt: new Date() },
     });
+
+    // Borrado del storage físico en DigitalOcean Spaces: recolectamos los ids de
+    // las entidades hijas (vehículos, conductores, ayudantes) porque sus archivos
+    // se guardan bajo esos ids como owner en la key. Best-effort: un fallo de
+    // storage no debe revertir la baja de la cuenta.
+    try {
+      const [vehicles, drivers, helpers] = await Promise.all([
+        this.prisma.vehicle.findMany({
+          where: { charterId: id },
+          select: { id: true },
+        }),
+        this.prisma.charterDriver.findMany({
+          where: { charterId: id },
+          select: { id: true },
+        }),
+        this.prisma.charterHelper.findMany({
+          where: { charterId: id },
+          select: { id: true },
+        }),
+      ]);
+      const entityIds = [
+        ...vehicles.map((v) => v.id),
+        ...drivers.map((d) => d.id),
+        ...helpers.map((h) => h.id),
+      ];
+      await this.storageService.deleteUserStorage(id, entityIds);
+    } catch (err) {
+      // no propagar: la cuenta ya quedó dada de baja
+      console.error('[UsersService] Error borrando storage del usuario', id, err);
+    }
   }
 
   async findWithoutPagination(): Promise<UserResponseDto[]> {

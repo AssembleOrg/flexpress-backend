@@ -20,7 +20,7 @@ export class CreateUserDocumentDto {
   @IsEnum(DocumentSide)
   side?: DocumentSide;
 
-  @ApiProperty({ example: 'https://uploadthing.com/...' })
+  @ApiProperty({ example: 'dev/private/dni/clx123/9f2c.jpg' })
   @IsString()
   fileUrl: string;
 }

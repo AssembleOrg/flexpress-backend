@@ -13,7 +13,7 @@ export class CreateVehicleDocumentDto {
   @IsEnum(VehicleDocumentType)
   type: VehicleDocumentType;
 
-  @ApiProperty({ example: 'https://uploadthing.com/...' })
+  @ApiProperty({ example: 'dev/private/vehiculo-doc/clx123/9f2c.jpg' })
   @IsString()
   fileUrl: string;
 
