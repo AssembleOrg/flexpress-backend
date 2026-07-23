@@ -10,6 +10,8 @@ import {
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { AuthService } from '../auth/auth.service';
 import { StorageService } from '../storage/storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationPriority } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
@@ -17,6 +19,7 @@ export class UsersService {
     private prisma: PrismaService,
     private authService: AuthService,
     private storageService: StorageService,
+    private notificationsService: NotificationsService,
   ) {}
 
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
@@ -370,6 +373,23 @@ export class UsersService {
         deletedAt: true,
       },
     });
+
+    try {
+      const approved = verifyDto.status === 'verified';
+      await this.notificationsService.createOrUpdate({
+        userId: charterId,
+        type: approved ? 'account_verified' : 'account_rejected',
+        title: approved ? '¡Cuenta aprobada!' : 'Cuenta rechazada',
+        body: approved
+          ? 'Tu cuenta fue verificada por nuestro equipo. Ya podés operar en Flexpress.'
+          : `Tu cuenta fue rechazada. Motivo: ${verifyDto.rejectionReason}`,
+        priority: NotificationPriority.HIGH,
+        data: { actionUrl: '/driver/dashboard' },
+        dedupeKey: `account_verification:user:${charterId}`,
+      });
+    } catch (err) {
+      console.error(`Notificación de verificación de charter fallida (no crítico): ${err}`);
+    }
 
     return updatedCharter as UserResponseDto;
   }

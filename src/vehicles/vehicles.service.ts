@@ -1,10 +1,13 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { NotificationPriority } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import { CreateVehicleDocumentDto } from './dto/create-vehicle-document.dto';
@@ -13,7 +16,12 @@ const MAX_VEHICLES_PER_CHARTER = 2;
 
 @Injectable()
 export class VehiclesService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(VehiclesService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   // ─── Vehicles ────────────────────────────────────────────────────────────────
 
@@ -147,7 +155,7 @@ export class VehiclesService {
       throw new BadRequestException('Debe proporcionar razón de rechazo');
     }
 
-    return this.prisma.vehicle.update({
+    const updated = await this.prisma.vehicle.update({
       where: { id: vehicleId },
       data: {
         verificationStatus: status,
@@ -158,6 +166,24 @@ export class VehiclesService {
       },
       include: { documents: true },
     });
+
+    try {
+      const approved = status === 'verified';
+      await this.notificationsService.createOrUpdate({
+        userId: vehicle.charterId,
+        type: approved ? 'vehicle_verified' : 'vehicle_rejected',
+        title: approved ? 'Vehículo aprobado' : 'Vehículo rechazado',
+        body: approved
+          ? `Tu vehículo (${vehicle.plate}) fue verificado. Ya podés activarlo para operar.`
+          : `Tu vehículo (${vehicle.plate}) fue rechazado. Motivo: ${rejectionReason}`,
+        priority: NotificationPriority.HIGH,
+        data: { actionUrl: '/driver/vehicles' },
+      });
+    } catch (err) {
+      this.logger.error(`Notificación de revisión de vehículo fallida (no crítico): ${err}`);
+    }
+
+    return updated;
   }
 
   async getAllPendingVehicles() {

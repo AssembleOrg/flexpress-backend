@@ -1,10 +1,13 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { NotificationPriority } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
 import { CreateDriverDocumentDto } from './dto/create-driver-document.dto';
@@ -29,7 +32,42 @@ const REQUIRED_HELPER_DOCS: Array<{ type: 'dni'; side: 'front' | 'back' }> = [
 
 @Injectable()
 export class CharterPersonnelService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(CharterPersonnelService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
+
+  /**
+   * Notifica al charter dueño el resultado de la revisión admin de su
+   * conductor/ayudante. Fire-and-forget: un fallo aquí no debe abortar la
+   * operación de revisión (mismo patrón que el resto del sistema).
+   */
+  private async notifyPersonnelReview(
+    charterId: string,
+    entityLabel: 'conductor' | 'ayudante',
+    entityName: string,
+    status: string,
+    rejectionReason?: string,
+  ): Promise<void> {
+    try {
+      const approved = status === 'verified';
+      const Entity = entityLabel === 'conductor' ? 'Conductor' : 'Ayudante';
+      await this.notificationsService.createOrUpdate({
+        userId: charterId,
+        type: approved ? 'personnel_verified' : 'personnel_rejected',
+        title: approved ? `${Entity} aprobado` : `${Entity} rechazado`,
+        body: approved
+          ? `Tu ${entityLabel} ${entityName} fue verificado. Ya podés activarlo para operar.`
+          : `Tu ${entityLabel} ${entityName} fue rechazado. Motivo: ${rejectionReason}`,
+        priority: NotificationPriority.HIGH,
+        data: { actionUrl: '/driver/personal' },
+      });
+    } catch (err) {
+      this.logger.error(`Notificación de revisión de ${entityLabel} fallida (no crítico): ${err}`);
+    }
+  }
 
   // ─── DRIVERS ────────────────────────────────────────────────────────────────
 
@@ -325,7 +363,7 @@ export class CharterPersonnelService {
       }
     }
 
-    return this.prisma.charterDriver.update({
+    const updated = await this.prisma.charterDriver.update({
       where: { id: driverId },
       data: {
         verificationStatus: dto.status,
@@ -336,6 +374,16 @@ export class CharterPersonnelService {
       },
       include: { documents: true },
     });
+
+    await this.notifyPersonnelReview(
+      driver.charterId,
+      'conductor',
+      `${driver.firstName} ${driver.lastName}`,
+      dto.status,
+      dto.rejectionReason,
+    );
+
+    return updated;
   }
 
   async adminReviewHelper(helperId: string, adminId: string, dto: ReviewEntityDto) {
@@ -361,7 +409,7 @@ export class CharterPersonnelService {
       }
     }
 
-    return this.prisma.charterHelper.update({
+    const updated = await this.prisma.charterHelper.update({
       where: { id: helperId },
       data: {
         verificationStatus: dto.status,
@@ -372,6 +420,16 @@ export class CharterPersonnelService {
       },
       include: { documents: true },
     });
+
+    await this.notifyPersonnelReview(
+      helper.charterId,
+      'ayudante',
+      `${helper.firstName} ${helper.lastName}`,
+      dto.status,
+      dto.rejectionReason,
+    );
+
+    return updated;
   }
 
   async adminReviewDriverDocument(docId: string, adminId: string, dto: ReviewDocumentDto) {
