@@ -159,13 +159,23 @@ export class AvailabilityInquiriesService {
       throw new GoneException('Esta consulta expiró');
     }
 
-    const updated = await this.prisma.availabilityInquiry.update({
-      where: { id: inquiryId },
+    // Condición en el WHERE: dos respuestas concurrentes no pueden notificar
+    // dos veces al cliente ni pisar el responseCode ya guardado.
+    const claimed = await this.prisma.availabilityInquiry.updateMany({
+      where: { id: inquiryId, status: 'pending' },
       data: {
         status: 'answered',
         responseCode,
         respondedAt: new Date(),
       },
+    });
+
+    if (claimed.count !== 1) {
+      throw new ConflictException('Esta consulta ya fue respondida');
+    }
+
+    const updated = await this.prisma.availabilityInquiry.findUniqueOrThrow({
+      where: { id: inquiryId },
     });
 
     const label = INQUIRY_RESPONSE_LABELS[responseCode];

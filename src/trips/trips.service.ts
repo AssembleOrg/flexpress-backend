@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTripDto, UpdateTripDto, TripResponseDto } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
@@ -350,9 +355,19 @@ export class TripsService {
       throw new NotFoundException('El viaje no está en estado pendiente');
     }
 
-    const updatedTrip = await this.prisma.trip.update({
-      where: { id: tripId },
+    // La transición se reclama con el estado previo en el WHERE: un doble
+    // click no puede disparar dos veces las notificaciones y los eventos de
+    // socket que van más abajo.
+    const claimed = await this.prisma.trip.updateMany({
+      where: { id: tripId, status: 'pending' },
       data: { status: 'charter_completed' },
+    });
+    if (claimed.count !== 1) {
+      throw new ConflictException('El viaje ya fue finalizado');
+    }
+
+    const updatedTrip = await this.prisma.trip.findUniqueOrThrow({
+      where: { id: tripId },
       include: {
         user: {
           select: {
@@ -431,11 +446,14 @@ export class TripsService {
       throw new NotFoundException('El transportista aún no ha finalizado el viaje');
     }
 
-    // Actualizar estado del viaje a completado
-    await this.prisma.trip.update({
-      where: { id: tripId },
+    // Actualizar estado del viaje a completado (condicional: ver charterCompleteTrip)
+    const claimed = await this.prisma.trip.updateMany({
+      where: { id: tripId, status: 'charter_completed' },
       data: { status: 'completed' },
     });
+    if (claimed.count !== 1) {
+      throw new ConflictException('El viaje ya fue confirmado');
+    }
 
     // Emit WebSocket event to notify both users that trip is completed
     this.gateway.server.to(`user:${trip.userId}`).emit('trip:completed', {

@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentDto, UpdatePaymentDto, PaymentResponseDto } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
@@ -166,13 +172,21 @@ export class PaymentsService {
       throw new BadRequestException('El pago ya fue procesado');
     }
 
-    // TRANSACCIÓN: Actualizar payment + incrementar créditos del usuario
+    // TRANSACCIÓN: reclamar el pago + acreditar.
+    //
+    // El chequeo de arriba es solo para dar un 400 claro: entre ese read y el
+    // update no hay lock. La garantía real es `status: 'pending'` en el WHERE,
+    // que Postgres reevalúa después de bloquear la fila. Sin esto, dos admins
+    // (o un doble click) aprobando el mismo comprobante acreditaban el doble.
     const result = await this.prisma.$transaction(async (tx) => {
-      const updatedPayment = await tx.payment.update({
-        where: { id: paymentId },
+      const claimed = await tx.payment.updateMany({
+        where: { id: paymentId, status: 'pending' },
         data: { status: 'accepted' },
-        include: { user: true },
       });
+
+      if (claimed.count !== 1) {
+        throw new ConflictException('El pago ya fue procesado');
+      }
 
       await tx.user.update({
         where: { id: payment.userId },
@@ -181,7 +195,10 @@ export class PaymentsService {
         },
       });
 
-      return updatedPayment;
+      return tx.payment.findUnique({
+        where: { id: paymentId },
+        include: { user: true },
+      });
     });
 
     try {
@@ -214,12 +231,22 @@ export class PaymentsService {
       throw new BadRequestException('El pago ya fue procesado');
     }
 
-    const updatedPayment = await this.prisma.payment.update({
-      where: { id: paymentId },
+    // Mismo criterio que approvePayment: la condición viaja en el WHERE para
+    // que un doble rechazo no dispare la notificación dos veces.
+    const claimed = await this.prisma.payment.updateMany({
+      where: { id: paymentId, status: 'pending' },
       data: {
         status: 'rejected',
         rejectionReason: reason,
       },
+    });
+
+    if (claimed.count !== 1) {
+      throw new ConflictException('El pago ya fue procesado');
+    }
+
+    const updatedPayment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
       include: {
         user: {
           select: {

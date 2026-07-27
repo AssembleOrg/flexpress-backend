@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -717,7 +718,9 @@ export class TravelMatchingService {
       // guard como en el descuento de la TX, así el monto validado == cobrado.
       const charterCost = getCharterCreditCost(match.distanceKm);
 
-      // Verificar créditos suficientes antes de aceptar
+      // Chequeo temprano para dar un error claro y barato. NO alcanza como
+      // garantía: entre este read y el descuento no hay lock, así que la
+      // validación real se repite como condición del UPDATE dentro de la TX.
       if (!match.charter || match.charter.credits < charterCost) {
         throw new BadRequestException(
           `Necesitás al menos ${charterCost} créditos para aceptar esta solicitud`,
@@ -779,20 +782,42 @@ export class TravelMatchingService {
         })),
       };
 
-      // TX atómica: descontar créditos + actualizar estado + crear TripPersonnel
+      // TX atómica: reclamar el match + descontar créditos + crear TripPersonnel.
+      //
+      // Cada escritura lleva su condición en el WHERE en vez de confiar en los
+      // reads de arriba: en READ COMMITTED Postgres bloquea la fila y reevalúa
+      // el WHERE después del lock, así que `count !== 1` significa que otro
+      // request ganó la carrera. Con la validación en JS, dos aceptaciones
+      // concurrentes pasaban ambas y dejaban los créditos en negativo.
       await this.prisma.$transaction(async (tx) => {
-        await tx.user.update({
-          where: { id: charterId },
-          data: { credits: { decrement: charterCost } },
-        });
-        await tx.user.update({
-          where: { id: match.userId },
-          data: { credits: { decrement: 1 } },
-        });
-        await tx.travelMatch.update({
-          where: { id: matchId },
+        const claimed = await tx.travelMatch.updateMany({
+          where: { id: matchId, status: 'pending' },
           data: { status: 'accepted' },
         });
+        if (claimed.count !== 1) {
+          throw new ConflictException('Esta solicitud ya fue respondida');
+        }
+
+        const charterCharged = await tx.user.updateMany({
+          where: { id: charterId, credits: { gte: charterCost } },
+          data: { credits: { decrement: charterCost } },
+        });
+        if (charterCharged.count !== 1) {
+          throw new BadRequestException(
+            `Necesitás al menos ${charterCost} créditos para aceptar esta solicitud`,
+          );
+        }
+
+        const userCharged = await tx.user.updateMany({
+          where: { id: match.userId, credits: { gte: 1 } },
+          data: { credits: { decrement: 1 } },
+        });
+        if (userCharged.count !== 1) {
+          throw new BadRequestException(
+            'El cliente no tiene créditos suficientes para completar la solicitud',
+          );
+        }
+
         await tx.tripPersonnel.create({
           data: {
             matchId,
@@ -806,10 +831,13 @@ export class TravelMatchingService {
 
     // Si fue rechazado, actualizar el estado ahora (el aceptado ya se hizo en la TX)
     if (!accept) {
-      await this.prisma.travelMatch.update({
-        where: { id: matchId },
+      const rejected = await this.prisma.travelMatch.updateMany({
+        where: { id: matchId, status: 'pending' },
         data: { status: 'rejected' },
       });
+      if (rejected.count !== 1) {
+        throw new ConflictException('Esta solicitud ya fue respondida');
+      }
     }
 
     if (accept) {
@@ -945,14 +973,20 @@ export class TravelMatchingService {
         },
       });
 
-      // Update match
-      await tx.travelMatch.update({
-        where: { id: matchId },
+      // El match se reclama con `tripId: null` en el WHERE: si otro request ya
+      // creó el viaje, count es 0 y el rollback descarta el Trip de esta TX.
+      // Sin la condición, dos llamadas concurrentes dejaban dos filas Trip y
+      // el match apuntando a una sola (la otra quedaba huérfana).
+      const linked = await tx.travelMatch.updateMany({
+        where: { id: matchId, status: 'accepted', tripId: null },
         data: {
           status: 'completed',
           tripId: trip.id,
         },
       });
+      if (linked.count !== 1) {
+        throw new ConflictException('Ya existe un viaje para esta búsqueda');
+      }
 
       // El chat del viaje no debe expirar/borrarse mientras el viaje exista.
       // Archivarlo lo excluye del cron de limpieza (filtra por isArchived: false).

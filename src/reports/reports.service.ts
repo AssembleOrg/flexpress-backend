@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException, Logger } from '@nestjs/common';
 import { NotificationPriority } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
@@ -301,15 +301,26 @@ export class ReportsService {
 
     const applyCredits = isResolving && hasCreditActions;
 
+    const isFinalizing = dto.status === 'resolved' || dto.status === 'dismissed';
+
     const updated = await this.prisma.$transaction(async (tx) => {
-      const updatedReport = await tx.report.update({
-        where: { id: reportId },
-        data,
-        include: {
-          reporter: { select: { id: true, name: true, email: true } },
-          reported: { select: { id: true, name: true, email: true } },
-        },
-      });
+      // Un reporte solo puede pasar a estado final UNA vez. Sin esta condición,
+      // dos resoluciones concurrentes (o un doble click) aplicaban el
+      // movimiento de créditos dos veces.
+      if (isFinalizing) {
+        const claimed = await tx.report.updateMany({
+          where: {
+            id: reportId,
+            status: { notIn: ['resolved', 'dismissed'] },
+          },
+          data,
+        });
+        if (claimed.count !== 1) {
+          throw new ConflictException('El reporte ya fue resuelto');
+        }
+      } else {
+        await tx.report.update({ where: { id: reportId }, data });
+      }
 
       if (applyCredits && creditsToReporter > 0) {
         await tx.user.update({
@@ -318,11 +329,21 @@ export class ReportsService {
         });
       }
 
+      // Los descuentos llevan el saldo en el WHERE: la validación de arriba se
+      // hizo sobre un read sin lock y el saldo pudo bajar mientras tanto.
       if (applyCredits && creditsFromReported > 0) {
-        await tx.user.update({
-          where: { id: report.reportedId },
+        const charged = await tx.user.updateMany({
+          where: {
+            id: report.reportedId,
+            credits: { gte: creditsFromReported },
+          },
           data: { credits: { decrement: creditsFromReported } },
         });
+        if (charged.count !== 1) {
+          throw new ConflictException(
+            'El reportado ya no tiene créditos suficientes',
+          );
+        }
       }
 
       if (applyCredits && creditsToReported > 0) {
@@ -333,13 +354,27 @@ export class ReportsService {
       }
 
       if (applyCredits && creditsFromReporter > 0) {
-        await tx.user.update({
-          where: { id: report.reporterId },
+        const charged = await tx.user.updateMany({
+          where: {
+            id: report.reporterId,
+            credits: { gte: creditsFromReporter },
+          },
           data: { credits: { decrement: creditsFromReporter } },
         });
+        if (charged.count !== 1) {
+          throw new ConflictException(
+            'El reportador ya no tiene créditos suficientes',
+          );
+        }
       }
 
-      return updatedReport;
+      return tx.report.findUniqueOrThrow({
+        where: { id: reportId },
+        include: {
+          reporter: { select: { id: true, name: true, email: true } },
+          reported: { select: { id: true, name: true, email: true } },
+        },
+      });
     });
 
     this.logger.log(`Reporte ${reportId} actualizado por admin ${adminId}`);
