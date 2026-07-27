@@ -4,7 +4,7 @@ import { TravelMatchingController } from './travel-matching.controller';
 import { TravelMatchingService } from './travel-matching.service';
 import { TravelMatchingGateway } from './travel-matching.gateway';
 import { PrismaModule } from '../prisma/prisma.module';
-import { ConversationsModule } from 'src/conversations/conversations.module';
+import { ConversationsModule } from '../conversations/conversations.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({

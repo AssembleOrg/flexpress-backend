@@ -27,7 +27,7 @@ import {
   addMinutes,
 } from '../common/utils/date.util';
 import { TravelMatchingGateway } from './travel-matching.gateway';
-import { ConversationsService } from 'src/conversations/conversations.service';
+import { ConversationsService } from '../conversations/conversations.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationPriority, VehicleSize } from '@prisma/client';
 
