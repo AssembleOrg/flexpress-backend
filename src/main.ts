@@ -1,3 +1,12 @@
+// Tiene que ser lo PRIMERO del proceso. Varios módulos leen process.env en
+// tiempo de import (JwtModule.register, por ejemplo), o sea antes de que
+// ConfigModule llegue a cargar el .env.
+//
+// Hasta Prisma 6 esto funcionaba de casualidad: importar @prisma/client
+// cargaba dotenv como efecto secundario. Prisma 7 lo sacó y los JWT pasaron a
+// firmarse sin secreto ("secretOrPrivateKey must have a value").
+import 'dotenv/config';
+
 import { timingSafeEqual } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';

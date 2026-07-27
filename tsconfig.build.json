@@ -1,4 +1,15 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "prisma", "**/*spec.ts"]
+  // prisma/ y prisma.config.ts quedan fuera a propósito: son herramientas de
+  // CLI, no parte del servidor. Si entran al build, TypeScript sube el rootDir
+  // a la raíz del repo y la salida pasa de dist/main.js a dist/src/main.js,
+  // con lo cual `pnpm start:prod` (node dist/main) no arranca.
+  "exclude": [
+    "node_modules",
+    "test",
+    "dist",
+    "prisma",
+    "prisma.config.ts",
+    "**/*spec.ts"
+  ]
 }

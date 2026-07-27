@@ -8,9 +8,10 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// En Prisma 7 la URL ya no va acá: la de Migrate vive en prisma.config.ts y la
+// de runtime la aporta el driver adapter (ver src/prisma/prisma.service.ts).
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {

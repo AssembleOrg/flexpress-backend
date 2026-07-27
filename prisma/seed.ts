@@ -1,8 +1,8 @@
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './client';
 import * as bcrypt from 'bcryptjs';
 import { UserRole } from '../src/common/enums';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 async function main() {
   console.log('🌱 Starting database seeding...');
