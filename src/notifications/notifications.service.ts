@@ -21,25 +21,40 @@ export class NotificationsService {
     let notification: Notification;
 
     if (dto.dedupeKey) {
-      const existing = await this.prisma.notification.findFirst({
-        where: {
-          userId: dto.userId,
-          dedupeKey: dto.dedupeKey,
-          isRead: false,
-        },
-      });
+      // "Buscar y si no está, crear" es check-then-act: dos eventos que caen
+      // juntos (por ejemplo el mismo viaje notificado desde dos caminos)
+      // pasaban ambos por el findFirst vacío y creaban dos notificaciones.
+      //
+      // No alcanza con un índice único: la regla es "una sola SIN LEER por
+      // clave", y eso exige un índice parcial, que Prisma no sabe expresar en
+      // el schema y aparecería como drift en cada `migrate dev`. Un advisory
+      // lock de transacción serializa solo a los que comparten la misma clave,
+      // sin tocar el esquema. Se libera solo al terminar la transacción.
+      const lockKey = `${dto.userId}:${dto.dedupeKey}`;
 
-      if (existing) {
-        notification = await this.prisma.notification.update({
-          where: { id: existing.id },
-          data: {
-            body: dto.body,
-            data: (dto.data ?? existing.data) as Prisma.InputJsonValue,
-            updatedAt: new Date(),
+      notification = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+
+        const existing = await tx.notification.findFirst({
+          where: {
+            userId: dto.userId,
+            dedupeKey: dto.dedupeKey,
+            isRead: false,
           },
         });
-      } else {
-        notification = await this.prisma.notification.create({
+
+        if (existing) {
+          return tx.notification.update({
+            where: { id: existing.id },
+            data: {
+              body: dto.body,
+              data: (dto.data ?? existing.data) as Prisma.InputJsonValue,
+              updatedAt: new Date(),
+            },
+          });
+        }
+
+        return tx.notification.create({
           data: {
             userId: dto.userId,
             type: dto.type,
@@ -50,7 +65,7 @@ export class NotificationsService {
             dedupeKey: dto.dedupeKey,
           },
         });
-      }
+      });
     } else {
       notification = await this.prisma.notification.create({
         data: {
