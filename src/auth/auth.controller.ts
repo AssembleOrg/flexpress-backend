@@ -1,14 +1,49 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  HttpCode,
+  HttpStatus,
+  BadRequestException,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBody,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { UserLoginDto, CreateUserDto } from '../users/dto';
 import { Public } from '../common/decorators/public.decorator';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  /**
+   * Devuelve el usuario del token, ya revalidado contra la base por
+   * JwtStrategy: si la cuenta fue dada de baja o bloqueada, este endpoint
+   * responde 401/403 aunque el token siga sin expirar. Es lo que le permite al
+   * front detectar una sesión revocada al abrir la app, sin esperar a que
+   * falle la primera llamada de datos.
+   */
+  @Get('profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Usuario autenticado actual' })
+  @ApiResponse({ status: 200, description: 'Sesión válida' })
+  @ApiResponse({ status: 401, description: 'Token inválido, expirado o cuenta dada de baja' })
+  @ApiResponse({ status: 403, description: 'Cuenta bloqueada' })
+  getProfile(@Request() req: any) {
+    return req.user;
+  }
 
   @Public()
   @Post('login')
