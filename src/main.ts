@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -64,12 +65,7 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: [
-      'https://flexpress-front.vercel.app',
-      'https://flexpress-front-production-2f47.up.railway.app',
-      'http://localhost:3000',
-      'http://localhost:3001',
-    ],
+    origin: configService.get<string[]>('corsOrigins'),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
@@ -135,12 +131,33 @@ function isValidBasicAuth(
   username: string,
   password: string,
 ): boolean {
+  if (!authHeader.startsWith('Basic ')) {
+    return false;
+  }
+
   const auth = Buffer.from(
-    authHeader.replace('Basic ', ''),
+    authHeader.slice('Basic '.length),
     'base64',
   ).toString();
-  const [user, pass] = auth.split(':');
-  return user === username && pass === password;
+  const separator = auth.indexOf(':');
+  if (separator === -1) {
+    return false;
+  }
+
+  // La contraseña se compara en tiempo constante: con `===` el early-return
+  // filtra por timing cuántos caracteres del prefijo son correctos.
+  return (
+    safeEqual(auth.slice(0, separator), username) &&
+    safeEqual(auth.slice(separator + 1), password)
+  );
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  // timingSafeEqual exige el mismo largo, así que el largo se compara aparte.
+  // No es secreto y por sí solo no permite recuperar la contraseña.
+  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
 }
 
 bootstrap();

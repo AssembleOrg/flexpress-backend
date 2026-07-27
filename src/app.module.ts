@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR, APP_FILTER } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -23,28 +23,34 @@ import { PushModule } from './push/push.module';
 import { AvailabilityInquiriesModule } from './availability-inquiries/availability-inquiries.module';
 import { StorageModule } from './storage/storage.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
+import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 // import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { RequestLoggerInterceptor } from './common/interceptors/request-logger.interceptor';
 import { GeolocationService } from './common/services/geolocation.service';
 import configuration from './config/configuration';
+import { validateEnv } from './config/env.validation';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
+      validate: validateEnv,
     }),
     ScheduleModule.forRoot(),
+    // Los dashboards disparan 5-6 queries en paralelo al montar, así que el
+    // límite anterior de 3 req/s devolvía 429 en una carga de página normal.
+    // El endpoint de login mantiene su propio @Throttle mucho más estricto.
     ThrottlerModule.forRoot([
       {
         name: 'short',
         ttl: 1000,
-        limit: 3,
+        limit: 20,
       },
       {
         name: 'medium',
         ttl: 10000,
-        limit: 20,
+        limit: 100,
       },
       {
         name: 'long',
@@ -74,6 +80,10 @@ import configuration from './config/configuration';
   providers: [
     AppService,
     GeolocationService,
+    {
+      provide: APP_FILTER,
+      useClass: PrismaExceptionFilter,
+    },
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,

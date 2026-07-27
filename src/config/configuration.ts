@@ -1,5 +1,24 @@
+// Orígenes permitidos por CORS. Una sola lista para HTTP y para Socket.IO:
+// estaban duplicadas a mano y la de sockets se quedó sin el dominio de
+// Railway, así que el realtime fallaba solo en el deploy.
+const parseOrigins = (raw?: string): string[] =>
+  (raw ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+const DEFAULT_ORIGINS = [
+  'https://flexpress-front.vercel.app',
+  'https://flexpress-front-production-2f47.up.railway.app',
+  'http://localhost:3000',
+  'http://localhost:3001',
+];
+
 export default () => ({
   port: parseInt(process.env.PORT || '3000', 10),
+  corsOrigins: parseOrigins(process.env.CORS_ORIGINS).length
+    ? parseOrigins(process.env.CORS_ORIGINS)
+    : DEFAULT_ORIGINS,
   database: {
     url: process.env.DATABASE_URL,
   },
