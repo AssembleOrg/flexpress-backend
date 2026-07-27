@@ -11,10 +11,16 @@ import { PrismaModule } from '../prisma/prisma.module';
   imports: [
     PrismaModule,
     PassportModule,
+    // Sin fallback de secreto a propósito: un default haría que los tokens se
+    // firmen con un valor público si falta la variable. validateEnv ya exige
+    // JWT_SECRET al arrancar.
+    //
+    // expiresIn estaba fijo en 24h, así que JWT_EXPIRES_IN (documentada y
+    // seteada en 3d) no tenía ningún efecto: los tokens duraban 24h.
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'your-secret-key',
+      secret: process.env.JWT_SECRET,
       signOptions: {
-        expiresIn: '24h',
+        expiresIn: process.env.JWT_EXPIRES_IN || '24h',
       },
     }),
   ],

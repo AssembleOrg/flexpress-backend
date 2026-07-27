@@ -18,6 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TravelMatchingService } from './travel-matching.service';
+import { CharterAvailabilityService } from './charter-availability.service';
 import {
   CreateMatchDto,
   SelectCharterDto,
@@ -32,7 +33,10 @@ import {
 @UseGuards(JwtAuthGuard)
 @Controller('travel-matching')
 export class TravelMatchingController {
-  constructor(private readonly matchingService: TravelMatchingService) {}
+  constructor(
+    private readonly matchingService: TravelMatchingService,
+    private readonly availabilityService: CharterAvailabilityService,
+  ) {}
 
   @Post('matches')
   // @Auditory('TravelMatch')
@@ -121,14 +125,14 @@ export class TravelMatchingController {
     @Request() req: any,
     @Body() dto: ToggleAvailabilityDto,
   ) {
-    return this.matchingService.toggleAvailability(req.user.id, dto);
+    return this.availabilityService.toggleAvailability(req.user.id, dto);
   }
 
   @Get('charter/availability')
   @ApiOperation({ summary: 'Get charter availability' })
   @ApiResponse({ status: 200, description: 'Availability retrieved' })
   async getAvailability(@Request() req: any) {
-    return this.matchingService.getAvailability(req.user.id);
+    return this.availabilityService.getAvailability(req.user.id);
   }
 
   @Put('charter/origin')
@@ -139,6 +143,6 @@ export class TravelMatchingController {
     @Request() req: any,
     @Body() dto: UpdateCharterOriginDto,
   ) {
-    return this.matchingService.updateCharterOrigin(req.user.id, dto);
+    return this.availabilityService.updateCharterOrigin(req.user.id, dto);
   }
 }

@@ -29,13 +29,11 @@ import {
 import { TravelMatchingGateway } from './travel-matching.gateway';
 import { ConversationsService } from '../conversations/conversations.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import {
+  TravelPricingService,
+  DEFAULT_WAIT_BLOCK_MINUTES,
+} from './travel-pricing.service';
 import { NotificationPriority, VehicleSize } from '@prisma/client';
-
-// Estimado del viaje en PESOS ARS (informativo). Estos defaults aplican si no
-// hay config en SystemConfig. NO se mezclan con los créditos (matching).
-const DEFAULT_MIN_PRICE_ARS = 20000; // mínimo de todo viaje
-const DEFAULT_WAIT_BLOCK_MINUTES = 30; // duración del bloque de espera fija
-const RETURN_TRIP_FACTOR = 0.5; // la vuelta se cobra al 50% del $/km
 
 export interface AvailableCharter {
   charterId: string;
@@ -87,6 +85,7 @@ export class TravelMatchingService {
     private readonly travelMatchingGateway: TravelMatchingGateway,
     private readonly conversationsService: ConversationsService,
     private readonly notificationsService: NotificationsService,
+    private readonly pricing: TravelPricingService,
   ) {}
 
   /**
@@ -273,9 +272,9 @@ export class TravelMatchingService {
     const chartersWithDistance: AvailableCharter[] = [];
 
     // 🔧 FIX N+1: Load pricing config ONCE before the loop
-    const pricingConfig = await this.loadPricingConfig();
+    const pricingConfig = await this.pricing.loadPricingConfig();
     // Mínimo del estimado en pesos ARS (independiente de los créditos).
-    const minPriceArs = await this.loadMinPriceArs();
+    const minPriceArs = await this.pricing.loadMinPriceArs();
 
     for (const charter of availableCharters) {
       if (!charter.originLatitude || !charter.originLongitude) continue;
@@ -293,14 +292,14 @@ export class TravelMatchingService {
           destination,
         );
         // Pass pre-loaded config to avoid N+1 queries
-        const estimatedCredits = await this.calculateCost(
+        const estimatedCredits = await this.pricing.calculateCost(
           distances.total,
           workersCount,
           pricingConfig,
         );
 
         // Estimado en pesos ARS (informativo, paralelo a los créditos).
-        const priceArs = this.calculateEstimatedPriceArs(
+        const priceArs = this.pricing.calculateEstimatedPriceArs(
           distances.pickupToDestination, // ida = SOLO el viaje del cliente (no se le cobra el traslado del charter hasta el pickup)
           distances.destinationToCharter, // vuelta
           {
@@ -397,133 +396,6 @@ export class TravelMatchingService {
   }
 
   /**
-   * Load pricing configuration from database (call once, reuse)
-   */
-  private async loadPricingConfig(): Promise<{
-    baseRate: number;
-    minimumCharge: number;
-    workerRate: number;
-  }> {
-    const configs = await this.prisma.systemConfig.findMany({
-      where: {
-        key: {
-          startsWith: 'pricing_',
-        },
-      },
-    });
-
-    // Default pricing
-    let baseRate = 1; // credits per km
-    let minimumCharge = 5; // minimum credits
-    let workerRate = 50; // credits per worker
-
-    for (const config of configs) {
-      if (config.key === 'pricing_base_rate_per_km') {
-        baseRate = parseFloat(config.value);
-      } else if (config.key === 'pricing_minimum_charge') {
-        minimumCharge = parseFloat(config.value);
-      } else if (config.key === 'pricing_worker_rate') {
-        workerRate = parseFloat(config.value);
-      }
-    }
-
-    return { baseRate, minimumCharge, workerRate };
-  }
-
-  /**
-   * Mínimo del estimado en PESOS ARS. Reusa la clave 'pricing_minimum_charge'
-   * (cuyo significado pasó a ser pesos; ya no alimenta ningún cobro en créditos).
-   */
-  private async loadMinPriceArs(): Promise<number> {
-    const config = await this.prisma.systemConfig.findUnique({
-      where: { key: 'pricing_minimum_charge' },
-    });
-    const value = config ? parseFloat(config.value) : NaN;
-    return Number.isFinite(value) && value > 0 ? value : DEFAULT_MIN_PRICE_ARS;
-  }
-
-  /**
-   * Calculate cost based on distance, workers and pricing config
-   * @param pricingConfig - Pre-loaded pricing config (optional, will load if not provided)
-   */
-  async calculateCost(
-    distanceKm: number,
-    workersCount: number = 0,
-    pricingConfig?: { baseRate: number; minimumCharge: number; workerRate: number },
-  ): Promise<number> {
-    // Use pre-loaded config or load it (for backwards compatibility)
-    const config = pricingConfig || await this.loadPricingConfig();
-
-    // Calculate distance cost
-    const distanceCost = Math.ceil(distanceKm * config.baseRate);
-
-    // Calculate worker cost
-    const workerCost = workersCount * config.workerRate;
-
-    // Total cost
-    const totalCost = distanceCost + workerCost;
-
-    return Math.max(totalCost, config.minimumCharge);
-  }
-
-  /**
-   * Estimado del viaje en PESOS ARS (informativo, aproximado por línea recta).
-   * Independiente de los créditos (que son solo comisión de matchmaking).
-   *
-   *   ida    = (pickup→destino) × pricePerKm  ← SOLO el viaje del cliente; no se
-   *            le cobra el traslado del charter hasta el pickup.
-   *   espera = pricePerWaitBlock (1 bloque fijo por viaje; 0 si no cobra)
-   *   vuelta = (destino→charter) × pricePerKm × 0.5  (solo si chargesReturnTrip)
-   *   total  = max(ida, mínimo $20.000)
-   *
-   * El `total` que ve el cliente es SOLO la ida pickup→destino (aproximado por
-   * km, coincide con la "distancia estimada" que se le muestra). Espera y vuelta
-   * se siguen calculando y se devuelven aparte (wait/return) pero NO suman al
-   * total mostrado: son posibles recargos que el cliente coordina con el
-   * charter, no un desglose sumado.
-   *
-   * Devuelve null en todos los campos si el charter no configuró pricePerKm.
-   */
-  private calculateEstimatedPriceArs(
-    idaKm: number,
-    returnKm: number,
-    charter: {
-      pricePerKm: number | null;
-      pricePerWaitBlock: number | null;
-      chargesReturnTrip: boolean;
-    },
-    minPriceArs: number,
-  ): {
-    total: number | null;
-    ida: number | null;
-    wait: number | null;
-    return: number | null;
-  } {
-    // Sin tarifa por km configurada → no hay estimado (no se muestra).
-    if (charter.pricePerKm == null || charter.pricePerKm <= 0) {
-      return { total: null, ida: null, wait: null, return: null };
-    }
-
-    const pricePerKm = charter.pricePerKm;
-    const ida = idaKm * pricePerKm;
-    const wait = charter.pricePerWaitBlock ?? 0;
-    const ret = charter.chargesReturnTrip
-      ? returnKm * pricePerKm * RETURN_TRIP_FACTOR
-      : 0;
-
-    // El cliente solo ve el aproximado de la ida (con mínimo). Espera y vuelta
-    // se devuelven aparte pero no suman al total mostrado.
-    const total = Math.max(ida, minPriceArs);
-
-    return {
-      total: Math.round(total),
-      ida: Math.round(ida),
-      wait: Math.round(wait),
-      return: Math.round(ret),
-    };
-  }
-
-  /**
    * User selects a charter for the match
    */
   async selectCharter(userId: string, matchId: string, dto: SelectCharterDto) {
@@ -595,7 +467,7 @@ export class TravelMatchingService {
       pickup,
       destination,
     );
-    const estimatedCredits = await this.calculateCost(
+    const estimatedCredits = await this.pricing.calculateCost(
       distances.total,
       match.workersCount,
     );
@@ -1263,304 +1135,6 @@ export class TravelMatchingService {
       success: true,
       message: 'Búsqueda cancelada exitosamente',
       data: updated,
-    };
-  }
-
-  /**
-   * Toggle charter availability
-   */
-  async toggleAvailability(charterId: string, dto: ToggleAvailabilityDto) {
-    // Verify charter has origin location set
-    const charter = await this.prisma.user.findUnique({
-      where: { id: charterId },
-    });
-
-    if (!charter || charter.role !== 'charter') {
-      throw new NotFoundException('Chófer no encontrado');
-    }
-
-    // Check if charter is verified by admin
-    if (charter.verificationStatus !== 'verified') {
-      throw new BadRequestException(
-        'Tu cuenta está pendiente de validación. Serás notificado cuando un administrador apruebe tu cuenta.',
-      );
-    }
-
-    // Cuenta bloqueada por el admin: no puede ponerse disponible.
-    if (dto.isAvailable && charter.accountStatus === 'banned') {
-      throw new BadRequestException(
-        charter.accountStatusNote
-          ? `Tu cuenta está bloqueada: ${charter.accountStatusNote}`
-          : 'Tu cuenta está bloqueada. Contactá con soporte.',
-      );
-    }
-
-    if (!charter.originLatitude || !charter.originLongitude) {
-      throw new BadRequestException(
-        'El chófer debe configurar su ubicación de origen antes de estar disponible',
-      );
-    }
-
-    if (dto.isAvailable && charter.credits < 2) {
-      throw new BadRequestException(
-        'Necesitás al menos 2 créditos para activar tu disponibilidad',
-      );
-    }
-
-    // Config activa "efectiva": si al (re)activarse el front no manda
-    // conductor/vehículo explícitos (ej: botones "Volver a mi zona"), heredamos
-    // la última config guardada y la revalidamos abajo. Así no se pierde el
-    // conductor elegido entre viajes.
-    const existing = await this.prisma.charterAvailability.findUnique({
-      where: { charterId },
-      select: { vehicleId: true, activeDriverId: true, activeHelperIds: true },
-    });
-
-    const sentExplicitConfig =
-      dto.activeDriverId !== undefined ||
-      dto.activeHelperIds !== undefined ||
-      dto.vehicleId !== undefined;
-
-    let effectiveVehicleId = dto.isAvailable
-      ? sentExplicitConfig
-        ? (dto.vehicleId ?? null)
-        : (existing?.vehicleId ?? null)
-      : null;
-    const effectiveDriverId = dto.isAvailable
-      ? sentExplicitConfig
-        ? (dto.activeDriverId ?? null)
-        : (existing?.activeDriverId ?? null)
-      : null;
-    const effectiveHelperIds = dto.isAvailable
-      ? sentExplicitConfig
-        ? (dto.activeHelperIds ?? [])
-        : (existing?.activeHelperIds ?? [])
-      : [];
-
-    if (dto.isAvailable && effectiveVehicleId) {
-      const vehicle = await this.prisma.vehicle.findUnique({
-        where: { id: effectiveVehicleId },
-      });
-
-      if (!vehicle || vehicle.charterId !== charterId) {
-        throw new NotFoundException('Vehículo no encontrado');
-      }
-
-      if (vehicle.verificationStatus !== 'verified') {
-        throw new BadRequestException(
-          'El vehículo seleccionado no está verificado. Solo podés activarte con un vehículo aprobado.',
-        );
-      }
-    }
-
-    // Sin vehículo efectivo al activarse: no se permite quedar disponible con
-    // vehicleId null (eso volvía al charter invisible en findAvailableCharters).
-    // Si hay exactamente un vehículo verificado, lo autoseleccionamos; si hay
-    // varios, exigimos que el charter elija uno.
-    if (dto.isAvailable && !effectiveVehicleId) {
-      const verifiedVehicles = await this.prisma.vehicle.findMany({
-        where: {
-          charterId,
-          verificationStatus: 'verified',
-        },
-        select: { id: true },
-      });
-
-      if (verifiedVehicles.length === 0) {
-        throw new BadRequestException(
-          'Necesitás al menos un vehículo verificado para activarte.',
-        );
-      }
-
-      if (verifiedVehicles.length === 1) {
-        effectiveVehicleId = verifiedVehicles[0].id;
-      } else {
-        throw new BadRequestException(
-          'Seleccioná el vehículo con el que vas a estar disponible.',
-        );
-      }
-    }
-
-    // Validar config activa (conductor + ayudantes) al activarse.
-    // El conductor extra y su vehículo van de la mano: si hay un conductor
-    // extra activo, el vehículo es obligatorio. El titular (sin driver) sigue
-    // como hasta ahora. Esto revalida también la config HEREDADA en una
-    // reactivación, de modo que un conductor deshabilitado entremedio se
-    // detecte con un mensaje claro.
-    if (dto.isAvailable && effectiveDriverId) {
-      if (!effectiveVehicleId) {
-        throw new BadRequestException(
-          'Para activarte con un conductor extra debés seleccionar también su vehículo.',
-        );
-      }
-
-      const driver = await this.prisma.charterDriver.findFirst({
-        where: { id: effectiveDriverId, charterId, deletedAt: null },
-      });
-      if (!driver) {
-        throw new BadRequestException(
-          'El conductor activo ya no existe o no pertenece a tu cuenta. Volvé a elegir un conductor.',
-        );
-      }
-      if (driver.verificationStatus !== 'verified' || !driver.isEnabled) {
-        throw new BadRequestException(
-          `El conductor ${driver.firstName} ${driver.lastName} ya no está disponible (deshabilitado o sin verificar). Elegí otro conductor.`,
-        );
-      }
-    }
-
-    if (dto.isAvailable && effectiveHelperIds.length > 0) {
-      const helpers = await this.prisma.charterHelper.findMany({
-        where: { id: { in: effectiveHelperIds }, charterId, deletedAt: null },
-      });
-      if (helpers.length !== effectiveHelperIds.length) {
-        throw new BadRequestException(
-          'Uno o más ayudantes activos ya no existen o no pertenecen a tu cuenta. Revisá tu selección.',
-        );
-      }
-      for (const h of helpers) {
-        if (h.verificationStatus !== 'verified' || !h.isEnabled) {
-          throw new BadRequestException(
-            `El ayudante ${h.firstName} ${h.lastName} ya no está disponible (deshabilitado o sin verificar).`,
-          );
-        }
-      }
-    }
-
-    // Upsert availability.
-    // Al activarse, persistimos la config efectiva (conductor + vehículo +
-    // ayudantes), ya sea la enviada explícitamente o la heredada/revalidada.
-    // Al desactivarse, CONSERVAMOS la última config para reusarla en la próxima
-    // reactivación (ej: "Volver a mi zona"); solo cambia isAvailable.
-    const activeConfig = dto.isAvailable
-      ? {
-          vehicleId: effectiveVehicleId,
-          activeDriverId: effectiveDriverId,
-          activeHelperIds: effectiveHelperIds,
-        }
-      : {};
-
-    const availability = await this.prisma.charterAvailability.upsert({
-      where: { charterId },
-      create: {
-        charterId,
-        isAvailable: dto.isAvailable,
-        lastToggledAt: nowInBuenosAires().toJSDate(),
-        ...activeConfig,
-      },
-      update: {
-        isAvailable: dto.isAvailable,
-        lastToggledAt: nowInBuenosAires().toJSDate(),
-        ...activeConfig,
-      },
-    });
-
-    return {
-      success: true,
-      message: `Disponibilidad actualizada: ${dto.isAvailable ? 'Disponible' : 'No disponible'}`,
-      data: availability,
-    };
-  }
-
-  /**
-   * Get charter availability
-   */
-  async getAvailability(charterId: string) {
-    const availability = await this.prisma.charterAvailability.findUnique({
-      where: { charterId },
-      include: {
-        charter: {
-          select: {
-            id: true,
-            name: true,
-            originAddress: true,
-            originLatitude: true,
-            originLongitude: true,
-            credits: true,
-          },
-        },
-      },
-    });
-
-    if (!availability) {
-      return {
-        success: true,
-        data: {
-          charterId,
-          isAvailable: false,
-          message: 'Disponibilidad no configurada',
-        },
-      };
-    }
-
-    // Auto-correct: if charter has insufficient credits but is marked available, reset it
-    if (availability.isAvailable && availability.charter.credits < 2) {
-      await this.prisma.charterAvailability.update({
-        where: { charterId },
-        data: { isAvailable: false },
-      });
-      return {
-        success: true,
-        data: { ...availability, isAvailable: false },
-      };
-    }
-
-    // Auto-correct: if the associated vehicle is no longer verified, reset availability
-    if (availability.isAvailable && availability.vehicleId) {
-      const vehicle = await this.prisma.vehicle.findUnique({
-        where: { id: availability.vehicleId },
-        select: { verificationStatus: true },
-      });
-
-      if (!vehicle || vehicle.verificationStatus !== 'verified') {
-        await this.prisma.charterAvailability.update({
-          where: { charterId },
-          data: { isAvailable: false },
-        });
-        return {
-          success: true,
-          data: { ...availability, isAvailable: false },
-        };
-      }
-    }
-
-    return {
-      success: true,
-      data: availability,
-    };
-  }
-
-  /**
-   * Update charter origin location
-   */
-  async updateCharterOrigin(charterId: string, dto: UpdateCharterOriginDto) {
-    const charter = await this.prisma.user.findUnique({
-      where: { id: charterId },
-    });
-
-    if (!charter || charter.role !== 'charter') {
-      throw new NotFoundException('Chófer no encontrado');
-    }
-
-    const updated = await this.prisma.user.update({
-      where: { id: charterId },
-      data: {
-        originAddress: dto.originAddress,
-        originLatitude: dto.originLatitude,
-        originLongitude: dto.originLongitude,
-      },
-    });
-
-    return {
-      success: true,
-      message: 'Ubicación de origen actualizada exitosamente',
-      data: {
-        id: updated.id,
-        name: updated.name,
-        originAddress: updated.originAddress,
-        originLatitude: updated.originLatitude,
-        originLongitude: updated.originLongitude,
-      },
     };
   }
 }
