@@ -31,19 +31,24 @@ import {
 } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { Auditory } from '../common/decorators/auditory.decorator';
-import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '../common/enums';
 
 @ApiTags('Users')
 @Controller('users')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @Public()
+  // NO es público: este endpoint acepta `role` sin filtrar, así que abierto
+  // permitía que cualquiera se creara un admin. El alta self-service de
+  // clientes/charters va por POST /auth/register, que bloquea admin/subadmin.
   @Post()
-  @ApiOperation({ summary: 'Create a new user' })
+  @Roles(UserRole.ADMIN, UserRole.SUBADMIN)
+  @ApiOperation({ summary: 'Create a new user (admin/subadmin only)' })
   @ApiBody({ 
     type: CreateUserDto,
     examples: {
@@ -118,7 +123,8 @@ export class UsersController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all users with pagination' })
+  @Roles(UserRole.ADMIN, UserRole.SUBADMIN)
+  @ApiOperation({ summary: 'Get all users with pagination (admin/subadmin only)' })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
   @ApiResponse({
@@ -282,10 +288,25 @@ export class UsersController {
     type: UserResponseDto,
   })
   @ApiResponse({
+    status: 403,
+    description: 'Not authorized to view this user',
+  })
+  @ApiResponse({
     status: 404,
     description: 'User not found',
   })
-  async findOne(@Param('id') id: string): Promise<UserResponseDto> {
+  async findOne(
+    @Param('id') id: string,
+    @Request() req,
+  ): Promise<UserResponseDto> {
+    // Solo admin/subadmin pueden ver un perfil ajeno: este endpoint devuelve
+    // email, teléfono y créditos.
+    if (
+      id !== req.user.id &&
+      !['admin', 'subadmin'].includes(req.user.role)
+    ) {
+      throw new ForbiddenException('No tenés permiso para ver este usuario');
+    }
     return this.usersService.findOne(id);
   }
 

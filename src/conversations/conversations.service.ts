@@ -29,13 +29,23 @@ export class ConversationsService {
   /**
    * Create a conversation when match is accepted
    */
-  async createConversation(matchId: string) {
+  async createConversation(matchId: string, requesterId?: string) {
     const match = await this.prisma.travelMatch.findUnique({
       where: { id: matchId },
     });
 
     if (!match) {
       throw new NotFoundException('Búsqueda no encontrada');
+    }
+
+    // `requesterId` solo viene cuando la llamada nace de un request HTTP; las
+    // llamadas internas (travel-matching al aceptar) lo omiten a propósito.
+    if (
+      requesterId &&
+      match.userId !== requesterId &&
+      match.charterId !== requesterId
+    ) {
+      throw new ForbiddenException('No participás de esta búsqueda');
     }
 
     if (match.status !== 'accepted' && match.status !== 'completed') {

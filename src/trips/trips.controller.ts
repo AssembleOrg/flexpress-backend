@@ -29,17 +29,24 @@ import {
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { VerifiedCharterGuard } from '../auth/guards/verified-charter.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { Auditory } from '../common/decorators/auditory.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '../common/enums';
 
 @ApiTags('Trips')
 @Controller('trips')
-@UseGuards(JwtAuthGuard, VerifiedCharterGuard)
+@UseGuards(JwtAuthGuard, VerifiedCharterGuard, RolesGuard)
 @ApiBearerAuth()
 export class TripsController {
   constructor(private readonly tripsService: TripsService) {}
 
+  // El alta real de viajes va por el flujo de travel-matching (al aceptar el
+  // match). Este endpoint toma `userId` y `charterId` del body sin validarlos,
+  // así que queda restringido a admin: el front no lo usa.
   @Post()
-  @ApiOperation({ summary: 'Create a new trip' })
+  @Roles(UserRole.ADMIN, UserRole.SUBADMIN)
+  @ApiOperation({ summary: 'Create a new trip (admin/subadmin only)' })
   @ApiBody({ 
     type: CreateTripDto,
     examples: {

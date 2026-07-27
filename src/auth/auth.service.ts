@@ -1,4 +1,9 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserLoginDto, CreateUserDto } from '../users/dto';
@@ -13,8 +18,10 @@ export class AuthService {
   ) {}
 
   async validateUser(email: string, password: string): Promise<any> {
-    const user = await this.prisma.user.findUnique({
-      where: { email },
+    // findFirst + deletedAt: una cuenta dada de baja no debe poder loguearse.
+    // Con findUnique({ email }) el soft delete quedaba sin efecto.
+    const user = await this.prisma.user.findFirst({
+      where: { email, deletedAt: null },
     });
 
     if (user && (await bcrypt.compare(password, user.password))) {
@@ -27,9 +34,17 @@ export class AuthService {
 
   async login(userLoginDto: UserLoginDto) {
     const user = await this.validateUser(userLoginDto.email, userLoginDto.password);
-    
+
     if (!user) {
       throw new UnauthorizedException('Credenciales inválidas');
+    }
+
+    if (user.accountStatus === 'banned') {
+      throw new ForbiddenException(
+        user.accountStatusNote
+          ? `Tu cuenta está bloqueada: ${user.accountStatusNote}`
+          : 'Tu cuenta está bloqueada. Contactá al administrador.',
+      );
     }
 
     const payload = { email: user.email, sub: user.id, role: user.role };

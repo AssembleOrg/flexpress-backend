@@ -33,8 +33,15 @@ export class ConversationsController {
   })
   @ApiResponse({ status: 201, description: 'Conversación creada exitosamente' })
   @ApiResponse({ status: 400, description: 'Match no aceptado o sin chófer' })
-  async createConversation(@Param('matchId') matchId: string) {
-    return this.conversationsService.createConversation(matchId);
+  @ApiResponse({ status: 403, description: 'No participás de esta búsqueda' })
+  async createConversation(
+    @Param('matchId') matchId: string,
+    @Request() req: any,
+  ) {
+    const requesterId = ['admin', 'subadmin'].includes(req.user.role)
+      ? undefined
+      : req.user.id;
+    return this.conversationsService.createConversation(matchId, requesterId);
   }
 
   @Get('my-conversations')

@@ -59,8 +59,20 @@ export class ReportsController {
   @ApiOperation({ summary: 'Obtener detalles de un reporte con historial de conversación' })
   @ApiResponse({ status: 200, description: 'Reporte obtenido exitosamente' })
   @ApiResponse({ status: 404, description: 'Reporte no encontrado' })
-  async getReportDetails(@Param('reportId') reportId: string) {
-    return this.reportsService.getReportDetails(reportId);
+  async getReportDetails(
+    @Param('reportId') reportId: string,
+    @Request() req: any,
+  ) {
+    const result = await this.reportsService.getReportDetails(reportId);
+    // El detalle incluye el historial completo del chat y los datos de contacto
+    // de ambas partes: solo admin o los propios involucrados.
+    const report = result.data;
+    const isParticipant =
+      report.reporterId === req.user.id || report.reportedId === req.user.id;
+    if (!isParticipant && !['admin', 'subadmin'].includes(req.user.role)) {
+      throw new ForbiddenException('No tenés permiso para ver este reporte');
+    }
+    return result;
   }
 
   @Put(':reportId')

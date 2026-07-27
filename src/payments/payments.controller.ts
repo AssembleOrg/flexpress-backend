@@ -29,11 +29,14 @@ import {
 } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { Auditory } from '../common/decorators/auditory.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole, PaymentStatus } from '../common/enums';
 
 @ApiTags('Payments')
 @Controller('payments')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
@@ -78,12 +81,23 @@ export class PaymentsController {
     }
   })
   @Auditory('Payment')
-  async create(@Body() createPaymentDto: CreatePaymentDto): Promise<PaymentResponseDto> {
+  async create(
+    @Body() createPaymentDto: CreatePaymentDto,
+    @Request() req: any,
+  ): Promise<PaymentResponseDto> {
+    // El cliente no elige a nombre de quién es la recarga ni en qué estado
+    // nace: el `userId` sale del JWT y el estado arranca siempre en pending.
+    // Sin esto se podían crear recargas ya "aceptadas" a nombre de terceros.
+    if (!['admin', 'subadmin'].includes(req.user?.role)) {
+      createPaymentDto.userId = req.user.id;
+      createPaymentDto.status = PaymentStatus.PENDING;
+    }
     return this.paymentsService.create(createPaymentDto);
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all payments with pagination' })
+  @Roles(UserRole.ADMIN, UserRole.SUBADMIN)
+  @ApiOperation({ summary: 'Get all payments with pagination (admin/subadmin only)' })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
   @ApiResponse({
@@ -128,7 +142,8 @@ export class PaymentsController {
   }
 
   @Get('all')
-  @ApiOperation({ summary: 'Get all payments without pagination' })
+  @Roles(UserRole.ADMIN, UserRole.SUBADMIN)
+  @ApiOperation({ summary: 'Get all payments without pagination (admin/subadmin only)' })
   @ApiResponse({
     status: 200,
     description: 'Payments retrieved successfully',
@@ -139,6 +154,7 @@ export class PaymentsController {
   }
 
   @Get('pending/count')
+  @Roles(UserRole.ADMIN, UserRole.SUBADMIN)
   @ApiOperation({ summary: 'Get count of pending payments (Admin)' })
   @ApiResponse({
     status: 200,
@@ -174,11 +190,25 @@ export class PaymentsController {
     type: PaymentResponseDto,
   })
   @ApiResponse({
+    status: 403,
+    description: 'Not authorized to view this payment',
+  })
+  @ApiResponse({
     status: 404,
     description: 'Payment not found',
   })
-  async findOne(@Param('id') id: string): Promise<PaymentResponseDto> {
-    return this.paymentsService.findOne(id);
+  async findOne(
+    @Param('id') id: string,
+    @Request() req: any,
+  ): Promise<PaymentResponseDto> {
+    const payment = await this.paymentsService.findOne(id);
+    if (
+      payment.userId !== req.user.id &&
+      !['admin', 'subadmin'].includes(req.user.role)
+    ) {
+      throw new ForbiddenException('No tenés permiso para ver este pago');
+    }
+    return payment;
   }
 
   @Patch(':id')

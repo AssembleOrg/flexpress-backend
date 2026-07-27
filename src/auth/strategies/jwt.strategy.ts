@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
@@ -37,6 +41,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         number: true,
         avatar: true,
         verificationStatus: true,
+        accountStatus: true,
+        accountStatusNote: true,
+        deletedAt: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -46,6 +53,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Usuario no encontrado');
     }
 
-    return user;
+    // El token vive 3 días: sin revalidar baja y baneo en cada request, un
+    // usuario dado de baja o bloqueado seguía operando hasta que expirara.
+    if (user.deletedAt) {
+      throw new UnauthorizedException('Usuario no encontrado');
+    }
+
+    if (user.accountStatus === 'banned') {
+      throw new ForbiddenException(
+        user.accountStatusNote
+          ? `Tu cuenta está bloqueada: ${user.accountStatusNote}`
+          : 'Tu cuenta está bloqueada. Contactá al administrador.',
+      );
+    }
+
+    const { deletedAt, ...authUser } = user;
+    return authUser;
   }
 } 
