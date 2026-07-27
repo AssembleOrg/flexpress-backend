@@ -21,6 +21,16 @@ import { AuthService } from './auth.service';
 import { UserLoginDto, CreateUserDto } from '../users/dto';
 import { Public } from '../common/decorators/public.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+
+/** Datos del request que se guardan con la sesión, para poder auditarla. */
+const sessionContext = (req: any) => ({
+  userAgent: req.headers?.['user-agent'],
+  ip:
+    req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() ||
+    req.headers?.['x-real-ip'] ||
+    req.ip,
+});
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -99,8 +109,40 @@ export class AuthController {
       }
     }
   })
-  async login(@Body() userLoginDto: UserLoginDto) {
-    return this.authService.login(userLoginDto);
+  async login(@Body() userLoginDto: UserLoginDto, @Request() req: any) {
+    return this.authService.login(userLoginDto, sessionContext(req));
+  }
+
+  /**
+   * Canjea el refresh por un access nuevo. El refresh rota: el anterior queda
+   * inutilizable, así que si vuelve a aparecer se asume robo y se cortan todas
+   * las sesiones del usuario.
+   */
+  @Public()
+  @Post('refresh')
+  @Throttle({ short: { limit: 10, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Renovar el access token' })
+  @ApiBody({ type: RefreshTokenDto })
+  @ApiResponse({ status: 200, description: 'Access y refresh nuevos' })
+  @ApiResponse({ status: 401, description: 'Refresh inválido, vencido o ya usado' })
+  @ApiResponse({ status: 403, description: 'Cuenta bloqueada' })
+  async refresh(@Body() dto: RefreshTokenDto, @Request() req: any) {
+    return this.authService.refresh(dto.refresh_token, sessionContext(req));
+  }
+
+  /**
+   * Revoca la sesión de este dispositivo. Es público a propósito: si el access
+   * ya venció el usuario igual tiene que poder cerrar sesión.
+   */
+  @Public()
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cerrar sesión en este dispositivo' })
+  @ApiBody({ type: RefreshTokenDto, required: false })
+  @ApiResponse({ status: 200, description: 'Sesión cerrada' })
+  async logout(@Body() dto: Partial<RefreshTokenDto>) {
+    return this.authService.logout(dto?.refresh_token);
   }
 
   @Public()
@@ -195,12 +237,12 @@ export class AuthController {
       }
     }
   })
-  async register(@Body() createUserDto: CreateUserDto) {
+  async register(@Body() createUserDto: CreateUserDto, @Request() req: any) {
     // Validate that admin/subadmin roles are not allowed
     if (createUserDto.role === 'admin' || createUserDto.role === 'subadmin') {
       throw new BadRequestException('No se pueden crear usuarios con roles admin o subadmin');
     }
     
-    return this.authService.register(createUserDto);
+    return this.authService.register(createUserDto, sessionContext(req));
   }
 } 

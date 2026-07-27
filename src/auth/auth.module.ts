@@ -5,6 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { RefreshTokenService } from './refresh-token.service';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -17,6 +18,9 @@ import { PrismaModule } from '../prisma/prisma.module';
     //
     // expiresIn estaba fijo en 24h, así que JWT_EXPIRES_IN (documentada y
     // seteada en 3d) no tenía ningún efecto: los tokens duraban 24h.
+    //
+    // Con refresh tokens el access pasa a ser corto (15m por defecto): lo que
+    // sostiene la sesión larga es el refresh, que sí se puede revocar.
     JwtModule.register({
       secret: process.env.JWT_SECRET,
       // El cast es necesario porque `expiresIn` está tipado con el template
@@ -25,12 +29,12 @@ import { PrismaModule } from '../prisma/prisma.module';
       // primer token.
       signOptions: {
         expiresIn: (process.env.JWT_EXPIRES_IN ||
-          '24h') as JwtSignOptions['expiresIn'],
+          '15m') as JwtSignOptions['expiresIn'],
       },
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
-  exports: [AuthService],
+  providers: [AuthService, JwtStrategy, RefreshTokenService],
+  exports: [AuthService, RefreshTokenService],
 })
 export class AuthModule {} 

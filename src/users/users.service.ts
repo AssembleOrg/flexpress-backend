@@ -9,6 +9,7 @@ import {
 } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { AuthService } from '../auth/auth.service';
+import { RefreshTokenService } from '../auth/refresh-token.service';
 import { StorageService } from '../storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationPriority } from '@prisma/client';
@@ -20,6 +21,7 @@ export class UsersService {
     private authService: AuthService,
     private storageService: StorageService,
     private notificationsService: NotificationsService,
+    private refreshTokens: RefreshTokenService,
   ) {}
 
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
@@ -207,6 +209,10 @@ export class UsersService {
       where: { id },
       data: { deletedAt: new Date() },
     });
+
+    // Dar de baja también corta la sesión: sin esto el refresh seguiría
+    // emitiendo access tokens para una cuenta que ya no existe.
+    await this.refreshTokens.revokeAllForUser(id);
 
     // Borrado del storage físico en DigitalOcean Spaces: recolectamos los ids de
     // las entidades hijas (vehículos, conductores, ayudantes) porque sus archivos
@@ -429,6 +435,13 @@ export class UsersService {
         accountStatusBy: adminId,
       },
     });
+
+    // Bloquear la cuenta tiene que cortar la sesión, no solo impedir logins
+    // nuevos. El access token vigente muere al vencer (15m); el refresh se
+    // revoca acá para que no pueda renovarlo.
+    if (dto.status === 'banned') {
+      await this.refreshTokens.revokeAllForUser(charterId);
+    }
 
     // Si se bloquea, sacarlo de disponibilidad para que no quede "en línea".
     if (dto.status === 'banned') {

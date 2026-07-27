@@ -73,8 +73,33 @@ model User {
   charterHelpers         CharterHelper[]      @relation("CharterHelpers")
   inquiriesSent          AvailabilityInquiry[] @relation("InquiriesSent")
   inquiriesReceived      AvailabilityInquiry[] @relation("InquiriesReceived")
+  refreshTokens          RefreshToken[]
 
   @@map("users")
+}
+
+/// Sesión renovable. Se guarda solo el hash SHA-256 del token: si alguien lee
+/// la tabla no puede usar los tokens. Rotan en cada uso, así que un refresh
+/// robado sirve una sola vez y su reutilización es detectable.
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  /// Momento en que se usó para rotar. Un token ya rotado que vuelve a
+  /// aparecer significa que fue robado: se revoca toda la familia.
+  rotatedAt DateTime?
+  /// Revocado por logout, por rotación en cadena o por sospecha de robo.
+  revokedAt DateTime?
+  userAgent String?
+  ip        String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
 }
 
 model Trip {
