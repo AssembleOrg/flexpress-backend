@@ -9,7 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentDto, UpdatePaymentDto, PaymentResponseDto } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { NotificationsService } from '../notifications/notifications.service';
-import { NotificationPriority } from '@prisma/client';
+import { NotificationPriority, UserRole } from '@prisma/client';
 
 @Injectable()
 export class PaymentsService {
@@ -33,6 +33,31 @@ export class PaymentsService {
         },
       },
     });
+
+    // Avisar a los admins que hay un pago por revisar (in-app + web push).
+    // No crítico: si falla, el pago igual queda creado.
+    try {
+      const admins = await this.prisma.user.findMany({
+        where: { role: UserRole.admin, deletedAt: null },
+        select: { id: true },
+      });
+
+      await Promise.all(
+        admins.map((admin) =>
+          this.notificationsService.createOrUpdate({
+            userId: admin.id,
+            type: 'payment_pending',
+            title: 'Nuevo pago por revisar',
+            body: `${payment.user.name} solicita una recarga de ${payment.credits} créditos.`,
+            priority: NotificationPriority.HIGH,
+            data: { actionUrl: '/admin' },
+            dedupeKey: `payment_pending:payment:${payment.id}`,
+          }),
+        ),
+      );
+    } catch (err) {
+      this.logger.error(`Notificación payment_pending fallida (no crítico): ${err}`);
+    }
 
     return payment as PaymentResponseDto;
   }

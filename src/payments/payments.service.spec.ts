@@ -115,3 +115,47 @@ describe('PaymentsService — concurrencia', () => {
     });
   });
 });
+
+/**
+ * Guarda: al crear un pago, se notifica a todos los admins (in-app + web push),
+ * uno por admin. Sin esto, el admin solo se entera por el polling de 30s con la
+ * app abierta.
+ */
+describe('PaymentsService.create — aviso a admins', () => {
+  const buildCreate = (admins: { id: string }[]) => {
+    const created = {
+      id: 'p1',
+      credits: 25,
+      user: { id: 'u1', name: 'Juan', email: 'j@x.com' },
+    };
+
+    const prisma = {
+      payment: { create: jest.fn().mockResolvedValue(created) },
+      user: { findMany: jest.fn().mockResolvedValue(admins) },
+    } as unknown as PrismaService;
+
+    const notifications = {
+      createOrUpdate: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NotificationsService;
+
+    return { service: new PaymentsService(prisma, notifications), notifications };
+  };
+
+  it('notifica una vez por cada admin', async () => {
+    const { service, notifications } = buildCreate([{ id: 'a1' }, { id: 'a2' }]);
+    await service.create({ userId: 'u1', credits: 25 } as never);
+
+    expect(notifications.createOrUpdate).toHaveBeenCalledTimes(2);
+    expect(notifications.createOrUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'a1', type: 'payment_pending' }),
+    );
+  });
+
+  it('no rompe la creación si no hay admins', async () => {
+    const { service, notifications } = buildCreate([]);
+    await expect(
+      service.create({ userId: 'u1', credits: 25 } as never),
+    ).resolves.toBeDefined();
+    expect(notifications.createOrUpdate).not.toHaveBeenCalled();
+  });
+});
