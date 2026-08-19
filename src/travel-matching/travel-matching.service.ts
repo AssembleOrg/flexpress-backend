@@ -101,6 +101,13 @@ export class TravelMatchingService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
+    // Un cliente no verificado no puede pedir viajes. Backstop del gate del front.
+    if (user.verificationStatus !== 'verified') {
+      throw new ForbiddenException(
+        'Tu cuenta está pendiente de verificación. Vas a poder pedir viajes cuando el equipo la apruebe.',
+      );
+    }
+
     // El cliente paga 1 crédito al confirmarse el viaje (ver respondToMatch).
     // Validamos acá para no permitir crear búsquedas que nunca podrán cerrarse
     // (ej: recuperación automática tras cancelar/expirar sin créditos).

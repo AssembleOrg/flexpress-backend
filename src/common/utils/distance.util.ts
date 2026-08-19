@@ -10,15 +10,16 @@ export interface Coordinates {
 
 /**
  * Factor de circuito: aproxima la distancia real por calle a partir de la
- * línea recta (Haversine). Calibrado para AMBA (~1.3 medido; usamos 1.25
- * conservador). Ajustable con datos reales.
+ * línea recta (Haversine). Calibrado para AMBA (~1.3 medido; usamos 1.35 como
+ * punto medio del rango estimado 1.3–1.4 que se muestra al cliente).
+ * Ajustable con datos reales.
  *
  * Se aplica SOLO a las distancias del viaje (lo que se cobra y se muestra),
  * en `calculateTravelDistances`. NO se aplica a `calculateDistance` ni a
  * `isWithinRadius`, para que el filtro de radio (cercanía zona→origen) siga
  * en línea recta y aparezca la mayor cantidad de charters posible.
  */
-export const STREET_DISTANCE_FACTOR = 1.25;
+export const STREET_DISTANCE_FACTOR = 1.35;
 
 /**
  * Calculate the distance between two points on Earth using the Haversine formula

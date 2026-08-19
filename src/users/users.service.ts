@@ -283,8 +283,8 @@ export class UsersService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    if (user.role !== 'charter') {
-      throw new BadRequestException('Este usuario no es un charter');
+    if (user.role !== 'charter' && user.role !== 'user') {
+      throw new BadRequestException('Este usuario no puede reenviar verificación');
     }
 
     if (user.verificationStatus !== 'rejected') {
@@ -336,8 +336,8 @@ export class UsersService {
       throw new NotFoundException('Charter no encontrado');
     }
 
-    if (charter.role !== 'charter') {
-      throw new BadRequestException('Este usuario no es un charter');
+    if (charter.role !== 'charter' && charter.role !== 'user') {
+      throw new BadRequestException('Este usuario no puede verificarse');
     }
 
     if (charter.verificationStatus !== 'pending') {
@@ -382,15 +382,20 @@ export class UsersService {
 
     try {
       const approved = verifyDto.status === 'verified';
+      const isCharter = charter.role === 'charter';
+      const actionUrl = isCharter ? '/driver/dashboard' : '/client/dashboard';
+      const approvedBody = isCharter
+        ? 'Tu cuenta fue verificada por nuestro equipo. Ya podés operar en Flexpress.'
+        : 'Tu cuenta fue verificada por nuestro equipo. Ya podés usar Flexpress.';
       await this.notificationsService.createOrUpdate({
         userId: charterId,
         type: approved ? 'account_verified' : 'account_rejected',
         title: approved ? '¡Cuenta aprobada!' : 'Cuenta rechazada',
         body: approved
-          ? 'Tu cuenta fue verificada por nuestro equipo. Ya podés operar en Flexpress.'
+          ? approvedBody
           : `Tu cuenta fue rechazada. Motivo: ${verifyDto.rejectionReason}`,
         priority: NotificationPriority.HIGH,
-        data: { actionUrl: '/driver/dashboard' },
+        data: { actionUrl },
         dedupeKey: `account_verification:user:${charterId}`,
       });
     } catch (err) {
@@ -559,4 +564,46 @@ export class UsersService {
 
     return charters;
   }
-} 
+
+  /**
+   * Clientes (role user) pendientes de verificación. Mismo shape de DNI que
+   * findPendingCharters pero sin vehículos (los clientes no tienen).
+   */
+  async findPendingUsers(): Promise<any[]> {
+    return this.prisma.user.findMany({
+      where: {
+        role: 'user',
+        verificationStatus: 'pending',
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        address: true,
+        credits: true,
+        number: true,
+        avatar: true,
+        verificationStatus: true,
+        rejectionReason: true,
+        createdAt: true,
+        updatedAt: true,
+        deletedAt: true,
+        userDocuments: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            type: true,
+            side: true,
+            fileUrl: true,
+            status: true,
+            rejectionReason: true,
+            uploadedAt: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+}

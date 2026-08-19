@@ -47,6 +47,15 @@ export class DocumentsController {
     return this.documentsService.deleteUserDocument(id, req.user.id, isAdmin);
   }
 
+  @Get('admin/documents/user/:id')
+  @ApiOperation({ summary: 'Admin: get documents of a given user (e.g. a client DNI)' })
+  async getUserDocumentsAdmin(@Param('id') id: string, @Request() req) {
+    if (!['admin', 'subadmin'].includes(req.user.role)) {
+      throw new ForbiddenException('Solo administradores');
+    }
+    return this.documentsService.getUserDocuments(id);
+  }
+
   // ─── Admin: review documents ─────────────────────────────────────────────────
 
   @Patch('admin/documents/user/:id/review')

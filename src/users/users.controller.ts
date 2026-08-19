@@ -261,6 +261,18 @@ export class UsersController {
     return this.usersService.findPendingCharters();
   }
 
+  @Get('users/pending')
+  @ApiOperation({ summary: 'Get all pending clients awaiting verification (admin/subadmin only)' })
+  @ApiResponse({ status: 200, description: 'Pending clients retrieved successfully', type: [UserResponseDto] })
+  @ApiResponse({ status: 403, description: 'User is not authorized to view pending clients' })
+  async findPendingUsers(@Request() req): Promise<UserResponseDto[]> {
+    const userRole = req.user?.role;
+    if (userRole !== 'admin' && userRole !== 'subadmin') {
+      throw new ForbiddenException('Solo administradores pueden ver clientes pendientes');
+    }
+    return this.usersService.findPendingUsers();
+  }
+
   @Post('me/resubmit-verification')
   @ApiOperation({
     summary: 'Resubmit verification (rejected charter reopens its own case)',
