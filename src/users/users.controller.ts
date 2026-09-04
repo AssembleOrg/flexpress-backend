@@ -433,6 +433,9 @@ export class UsersController {
     if (!['admin', 'subadmin'].includes(userRole)) {
       throw new ForbiddenException('Solo administradores pueden eliminar usuarios');
     }
+    if (id === req.user?.id) {
+      throw new ForbiddenException('No podés eliminar tu propia cuenta');
+    }
     return this.usersService.remove(id);
   }
 

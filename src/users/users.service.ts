@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateUserDto,
@@ -202,6 +208,12 @@ export class UsersService {
 
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
+    }
+
+    // Los admins no se borran desde la API: evita perder el acceso al panel.
+    // Si hace falta dar de baja uno, se hace a mano en la DB.
+    if (user.role === 'admin') {
+      throw new ForbiddenException('No se puede eliminar un usuario administrador');
     }
 
     // Soft delete
