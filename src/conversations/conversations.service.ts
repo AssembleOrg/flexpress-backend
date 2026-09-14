@@ -396,13 +396,15 @@ export class ConversationsService {
   async cleanupExpiredConversations() {
     const now = nowInBuenosAires().toJSDate();
 
-    // Find expired conversations that are not archived
+    // Solo el id: la fila entera no se usa y, si el cron se atrasa, pueden ser
+    // muchas. Se marcan una por una para avisar por socket a cada room.
     const expired = await this.prisma.conversation.findMany({
       where: {
         expiresAt: { lt: now },
         status: 'active',
         isArchived: false,
       },
+      select: { id: true },
     });
 
     if (expired.length === 0) {

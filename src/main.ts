@@ -26,6 +26,10 @@ async function bootstrap() {
   app.useWebSocketAdapter(new SocketIoAdapter(app));
   app.setGlobalPrefix('api/v1');
 
+  // Sin esto Nest no escucha SIGTERM y onModuleDestroy nunca corre: en cada
+  // redeploy el pool de pg quedaba abierto hasta que el proceso moría.
+  app.enableShutdownHooks();
+
   // Security middleware - Helmet adds various HTTP headers for security
   app.use(
     helmet({

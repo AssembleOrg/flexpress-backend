@@ -10,12 +10,15 @@ import { Server, Socket } from 'socket.io';
 import { Injectable, Logger } from '@nestjs/common';
 import { WebSocketGateway } from '@nestjs/websockets';
 import { JwtService } from '@nestjs/jwt';
+import { PrismaService } from '../prisma/prisma.service';
 
-interface ConversationRoom {
-  conversationId: string;
-  userId: string;
-  charterId: string;
-  sockets: Set<string>; // socket IDs in this room
+/**
+ * Datos que el gateway cuelga de cada socket autenticado. Vivir en
+ * `socket.data` (y no en un Map propio) hace que mueran con el socket: no hay
+ * nada que limpiar en disconnect y nada que pueda quedar colgado.
+ */
+interface SocketData {
+  userId?: string;
 }
 
 @Injectable()
@@ -29,10 +32,11 @@ export class TravelMatchingGateway
   server: Server;
 
   private readonly logger = new Logger(TravelMatchingGateway.name);
-  private rooms: Map<string, ConversationRoom> = new Map();
-  private userSockets: Map<string, Set<string>> = new Map(); // userId -> Set<socketId>
 
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   handleConnection(client: Socket) {
     const token = client.handshake.auth?.token as string | undefined;
@@ -44,14 +48,10 @@ export class TravelMatchingGateway
     try {
       const payload = this.jwtService.verify<{ sub: string }>(token);
       const userId = payload.sub;
-      (client as any).userId = userId;
+      (client.data as SocketData).userId = userId;
 
-      if (!this.userSockets.has(userId)) {
-        this.userSockets.set(userId, new Set());
-      }
-      this.userSockets.get(userId)!.add(client.id);
-
-      // Room personal — permite emitir a un usuario sin iterar el Map
+      // Room personal — Socket.IO la mantiene y la desarma sola al desconectar,
+      // así que sirve de índice userId -> sockets sin estado propio.
       client.join(`user:${userId}`);
       this.logger.log(`Socket ${client.id} conectado → usuario ${userId}`);
     } catch {
@@ -61,57 +61,47 @@ export class TravelMatchingGateway
   }
 
   handleDisconnect(client: Socket) {
-    const userId = (client as any).userId as string | undefined;
-    if (userId) {
-      const sockets = this.userSockets.get(userId);
-      if (sockets) {
-        sockets.delete(client.id);
-        if (sockets.size === 0) this.userSockets.delete(userId);
-      }
-    }
-    // Limpiar rooms de conversación
-    this.rooms.forEach((room, conversationId) => {
-      room.sockets.delete(client.id);
-      if (room.sockets.size === 0) {
-        this.rooms.delete(conversationId);
-      }
-    });
     this.logger.log(`Socket ${client.id} desconectado`);
   }
 
+  /**
+   * La identidad sale siempre del JWT verificado en la conexión. El payload de
+   * los eventos puede traer un `userId`, pero se ignora: un cliente podría
+   * mandar cualquiera.
+   */
+  private userIdOf(client: Socket): string | undefined {
+    return (client.data as SocketData).userId;
+  }
+
   @SubscribeMessage('join-conversation')
-  handleJoinConversation(
+  async handleJoinConversation(
     @ConnectedSocket() client: Socket,
-    @MessageBody()
-    data: { conversationId: string; userId: string; charterId?: string },
+    @MessageBody() data: { conversationId: string },
   ) {
-    const { conversationId, userId, charterId } = data;
-
-    // Store user socket mapping (support multiple sockets per user)
-    if (!this.userSockets.has(userId)) {
-      this.userSockets.set(userId, new Set());
+    const { conversationId } = data;
+    const userId = this.userIdOf(client);
+    if (!userId || !conversationId) {
+      return { success: false, message: 'No autorizado' };
     }
-    this.userSockets.get(userId)!.add(client.id);
 
-    // Join the conversation room
+    // Solo las dos partes de la conversación pueden escuchar su room.
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { userId: true, charterId: true },
+    });
+    if (
+      !conversation ||
+      (conversation.userId !== userId && conversation.charterId !== userId)
+    ) {
+      this.logger.warn(
+        `Usuario ${userId} intentó entrar a conversación ${conversationId} sin pertenecer`,
+      );
+      return { success: false, message: 'No autorizado' };
+    }
+
     client.join(`conversation:${conversationId}`);
-
-    // Track room
-    if (!this.rooms.has(conversationId)) {
-      this.rooms.set(conversationId, {
-        conversationId,
-        userId,
-        charterId: charterId || '',
-        sockets: new Set([client.id]),
-      });
-    } else {
-      const room = this.rooms.get(conversationId)!;
-      room.sockets.add(client.id);
-    }
-
     this.logger.log(`Usuario ${userId} entró a conversación ${conversationId}`);
 
-    // Notify others in the room
     client.to(`conversation:${conversationId}`).emit('user-joined', {
       userId,
       timestamp: new Date().toISOString(),
@@ -123,34 +113,16 @@ export class TravelMatchingGateway
   @SubscribeMessage('leave-conversation')
   handleLeaveConversation(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string; userId: string },
+    @MessageBody() data: { conversationId: string },
   ) {
-    const { conversationId, userId } = data;
+    const { conversationId } = data;
+    const userId = this.userIdOf(client);
 
     client.leave(`conversation:${conversationId}`);
-
-    const room = this.rooms.get(conversationId);
-    if (room) {
-      room.sockets.delete(client.id);
-      if (room.sockets.size === 0) {
-        this.rooms.delete(conversationId);
-      }
-    }
-
-    // Remove from user sockets
-    const userSockets = this.userSockets.get(userId);
-    if (userSockets) {
-      userSockets.delete(client.id);
-      if (userSockets.size === 0) {
-        this.userSockets.delete(userId);
-      }
-    }
-
     this.logger.log(
       `Usuario ${userId} salió de conversación ${conversationId}`,
     );
 
-    // Notify others
     client.to(`conversation:${conversationId}`).emit('user-left', {
       userId,
       timestamp: new Date().toISOString(),
@@ -159,50 +131,20 @@ export class TravelMatchingGateway
     return { success: true, message: 'Salió de conversación' };
   }
 
-  @SubscribeMessage('send-message')
-  handleMessage(
-    @ConnectedSocket() client: Socket,
-    @MessageBody()
-    data: {
-      conversationId: string;
-      userId: string;
-      message: string;
-      userName: string;
-    },
-  ) {
-    const { conversationId, userId, message, userName } = data;
-
-    this.logger.log(`Mensaje en conversación ${conversationId} de ${userId}`);
-
-    // Broadcast to everyone in the room including sender
-    this.server.to(`conversation:${conversationId}`).emit('new-message', {
-      conversationId,
-      userId,
-      userName,
-      message,
-      timestamp: new Date().toISOString(),
-    });
-
-    return { success: true, message: 'Mensaje enviado' };
-  }
-
   @SubscribeMessage('typing')
   handleTyping(
     @ConnectedSocket() client: Socket,
-    @MessageBody()
-    data: {
-      conversationId: string;
-      userId: string;
-      userName: string;
-      isTyping: boolean;
-    },
+    @MessageBody() data: { conversationId: string; isTyping?: boolean },
   ) {
-    const { conversationId, userId, userName, isTyping } = data;
+    const { conversationId, isTyping = true } = data;
 
-    // Notify others (not the sender)
+    // Solo quien está en el room puede avisar que escribe en él.
+    if (!client.rooms.has(`conversation:${conversationId}`)) {
+      return { success: false };
+    }
+
     client.to(`conversation:${conversationId}`).emit('user-typing', {
-      userId,
-      userName,
+      userId: this.userIdOf(client),
       isTyping,
       timestamp: new Date().toISOString(),
     });
@@ -227,15 +169,10 @@ export class TravelMatchingGateway
    * Notify user about new conversation
    */
   notifyNewConversation(userId: string, conversationData: any) {
-    const sockets = this.userSockets.get(userId);
-    if (sockets) {
-      sockets.forEach((socketId) => {
-        this.server.to(socketId).emit('new-conversation', {
-          conversation: conversationData,
-          timestamp: new Date().toISOString(),
-        });
-      });
-    }
+    this.notifyUser(userId, 'new-conversation', {
+      conversation: conversationData,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   /**
@@ -250,6 +187,7 @@ export class TravelMatchingGateway
         timestamp: new Date().toISOString(),
       });
   }
+
   /**
    * Emite un evento a todos los sockets de un usuario.
    * Usa el room personal `user:{userId}` creado en handleConnection.
@@ -263,19 +201,9 @@ export class TravelMatchingGateway
     userId: string,
     matchData: { matchId: string; status: string },
   ) {
-    const userSocketIds = this.userSockets.get(userId);
-
-    if (userSocketIds && userSocketIds.size > 0) {
-      userSocketIds.forEach((socketId) => {
-        this.server.to(socketId).emit('match:updated', matchData);
-        this.logger.log(
-          `Notificando a usuario ${userId} (socket ${socketId}) sobre actualización de match ${matchData.matchId} a estado ${matchData.status}`,
-        );
-      });
-    } else {
-      this.logger.warn(
-        `No se encontró socket activo para el usuario ${userId} para notificar sobre el match ${matchData.matchId}`,
-      );
-    }
+    this.logger.log(
+      `Notificando a usuario ${userId} sobre actualización de match ${matchData.matchId} a estado ${matchData.status}`,
+    );
+    this.notifyUser(userId, 'match:updated', matchData);
   }
 }
