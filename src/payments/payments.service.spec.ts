@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ActivityLogService } from '../common/services/activity-log.service';
 
 /**
  * Guarda de regresión de la carrera de aprobación.
@@ -45,7 +46,11 @@ describe('PaymentsService — concurrencia', () => {
       createOrUpdate: jest.fn().mockResolvedValue(undefined),
     } as unknown as NotificationsService;
 
-    return { service: new PaymentsService(prisma, notifications), prisma, tx };
+    const activityLog = {
+      logFeature: jest.fn().mockResolvedValue(undefined),
+    } as unknown as ActivityLogService;
+
+    return { service: new PaymentsService(prisma, notifications, activityLog), prisma, tx };
   };
 
   describe('approvePayment', () => {
@@ -138,7 +143,11 @@ describe('PaymentsService.create — aviso a admins', () => {
       createOrUpdate: jest.fn().mockResolvedValue(undefined),
     } as unknown as NotificationsService;
 
-    return { service: new PaymentsService(prisma, notifications), notifications };
+    const activityLog = {
+      logFeature: jest.fn().mockResolvedValue(undefined),
+    } as unknown as ActivityLogService;
+
+    return { service: new PaymentsService(prisma, notifications, activityLog), notifications };
   };
 
   it('notifica una vez por cada admin', async () => {

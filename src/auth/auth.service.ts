@@ -52,6 +52,11 @@ export class AuthService {
       );
     }
 
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
     const payload = { email: user.email, sub: user.id, role: user.role };
     const refresh = await this.refreshTokens.issue(user.id, ctx);
 
@@ -180,6 +185,11 @@ export class AuthService {
           : 'Tu cuenta está bloqueada. Contactá al administrador.',
       );
     }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
 
     const payload = { email: user.email, sub: user.id, role: user.role };
 

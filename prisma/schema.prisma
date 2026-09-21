@@ -48,6 +48,8 @@ model User {
   accountStatusAt   DateTime?
   accountStatusBy   String? // Admin user ID que aplicó la sanción
 
+  lastLoginAt DateTime? // Último login exitoso (para métricas de actividad en auditoría)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -168,6 +170,8 @@ model AuditLog {
   entityType String
   entityId   String
   action     String
+  feature    String? // Nombre legible de la acción de negocio (ej: "Pidió cargar crédito"). null = log genérico.
+  status     String? // Estado resultante (ej: "completed", "rejected", "available")
   oldValues  Json?
   newValues  Json?
   ipAddress  String?
@@ -175,6 +179,8 @@ model AuditLog {
   userId     String?
   createdAt  DateTime @default(now())
 
+  @@index([feature])
+  @@index([createdAt])
   @@map("audit_logs")
 }
 

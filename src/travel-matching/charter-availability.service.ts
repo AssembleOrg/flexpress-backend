@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ToggleAvailabilityDto, UpdateCharterOriginDto } from './dto';
 import { nowInBuenosAires } from '../common/utils/date.util';
+import { ActivityLogService } from '../common/services/activity-log.service';
 
 /**
  * Configuración propia del charter: si está disponible, con qué vehículo y qué
@@ -17,7 +18,10 @@ import { nowInBuenosAires } from '../common/utils/date.util';
  */
 @Injectable()
 export class CharterAvailabilityService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly activityLog: ActivityLogService,
+  ) {}
 
   /**
    * Toggle charter availability
@@ -206,6 +210,14 @@ export class CharterAvailabilityService {
         lastToggledAt: nowInBuenosAires().toJSDate(),
         ...activeConfig,
       },
+    });
+
+    await this.activityLog.logFeature({
+      userId: charterId,
+      entityType: 'CharterAvailability',
+      entityId: availability.id,
+      feature: 'Cambió su disponibilidad',
+      status: dto.isAvailable ? 'available' : 'unavailable',
     });
 
     return {

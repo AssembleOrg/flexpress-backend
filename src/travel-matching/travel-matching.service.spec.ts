@@ -6,6 +6,7 @@ import { TravelMatchingGateway } from './travel-matching.gateway';
 import { ConversationsService } from '../conversations/conversations.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TravelPricingService } from './travel-pricing.service';
+import { ActivityLogService } from '../common/services/activity-log.service';
 
 /**
  * Guarda de regresión de la carrera de aceptación.
@@ -74,6 +75,9 @@ describe('TravelMatchingService — aceptar match', () => {
     // Aceptar un match no consulta precios (el costo sale de credit-cost.util),
     // así que alcanza con un doble vacío.
     const pricing = {} as unknown as TravelPricingService;
+    const activityLog = {
+      logFeature: jest.fn().mockResolvedValue(undefined),
+    } as unknown as ActivityLogService;
 
     const service = new TravelMatchingService(
       prisma,
@@ -81,6 +85,7 @@ describe('TravelMatchingService — aceptar match', () => {
       conversations as unknown as ConversationsService,
       notifications as unknown as NotificationsService,
       pricing,
+      activityLog,
     );
 
     return { service, prisma, tx };

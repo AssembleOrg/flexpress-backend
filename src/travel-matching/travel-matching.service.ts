@@ -34,6 +34,7 @@ import {
   DEFAULT_WAIT_BLOCK_MINUTES,
 } from './travel-pricing.service';
 import { NotificationPriority, VehicleSize } from '@prisma/client';
+import { ActivityLogService } from '../common/services/activity-log.service';
 
 export interface AvailableCharter {
   charterId: string;
@@ -86,6 +87,7 @@ export class TravelMatchingService {
     private readonly conversationsService: ConversationsService,
     private readonly notificationsService: NotificationsService,
     private readonly pricing: TravelPricingService,
+    private readonly activityLog: ActivityLogService,
   ) {}
 
   /**
@@ -209,6 +211,14 @@ export class TravelMatchingService {
           },
         },
       },
+    });
+
+    await this.activityLog.logFeature({
+      userId,
+      entityType: 'TravelMatch',
+      entityId: match.id,
+      feature: 'Abrió búsqueda de viaje',
+      status: 'searching',
     });
 
     return {
@@ -717,6 +727,14 @@ export class TravelMatchingService {
       if (rejected.count !== 1) {
         throw new ConflictException('Esta solicitud ya fue respondida');
       }
+
+      await this.activityLog.logFeature({
+        userId: charterId,
+        entityType: 'TravelMatch',
+        entityId: matchId,
+        feature: 'Rechazó el pedido',
+        status: 'rejected',
+      });
     }
 
     if (accept) {
@@ -877,6 +895,14 @@ export class TravelMatchingService {
       }
 
       return trip;
+    });
+
+    await this.activityLog.logFeature({
+      userId,
+      entityType: 'Trip',
+      entityId: result.id,
+      feature: 'Confirmó el match (creó viaje)',
+      status: 'ok',
     });
 
     return {
@@ -1111,6 +1137,14 @@ export class TravelMatchingService {
     const updated = await this.prisma.travelMatch.update({
       where: { id: matchId },
       data: { status: 'cancelled' },
+    });
+
+    await this.activityLog.logFeature({
+      userId,
+      entityType: 'TravelMatch',
+      entityId: matchId,
+      feature: 'Canceló la búsqueda',
+      status: 'cancelled',
     });
 
     // Si había un chófer con el pedido pendiente, avisarle que el cliente

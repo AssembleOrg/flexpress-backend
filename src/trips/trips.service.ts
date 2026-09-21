@@ -9,6 +9,7 @@ import { CreateTripDto, UpdateTripDto, TripResponseDto } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { TravelMatchingGateway } from '../travel-matching/travel-matching.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ActivityLogService } from '../common/services/activity-log.service';
 import { NotificationPriority } from '@prisma/client';
 
 @Injectable()
@@ -19,6 +20,7 @@ export class TripsService {
     private prisma: PrismaService,
     private gateway: TravelMatchingGateway,
     private readonly notificationsService: NotificationsService,
+    private readonly activityLog: ActivityLogService,
   ) {}
 
   async create(createTripDto: CreateTripDto): Promise<TripResponseDto> {
@@ -417,6 +419,14 @@ export class TripsService {
       this.logger.error(`Notificación trip_charter_completed fallida (no crítico): ${err}`);
     }
 
+    await this.activityLog.logFeature({
+      userId: charterId,
+      entityType: 'Trip',
+      entityId: tripId,
+      feature: 'Charter finalizó el viaje',
+      status: 'charter_completed',
+    });
+
     return updatedTrip as TripResponseDto;
   }
 
@@ -513,6 +523,14 @@ export class TripsService {
       },
     });
 
+    await this.activityLog.logFeature({
+      userId,
+      entityType: 'Trip',
+      entityId: tripId,
+      feature: 'Cliente confirmó el viaje',
+      status: 'completed',
+    });
+
     return updatedTrip as TripResponseDto;
   }
-} 
+}

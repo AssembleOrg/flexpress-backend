@@ -22,6 +22,8 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PushModule } from './push/push.module';
 import { AvailabilityInquiriesModule } from './availability-inquiries/availability-inquiries.module';
 import { StorageModule } from './storage/storage.module';
+import { AuditModule } from './audit/audit.module';
+import { ActivityLogModule } from './common/services/activity-log.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 // import { AuditInterceptor } from './common/interceptors/audit.interceptor';
@@ -75,6 +77,8 @@ import { validateEnv } from './config/env.validation';
     PushModule,
     AvailabilityInquiriesModule,
     StorageModule,
+    AuditModule,
+    ActivityLogModule,
   ],
   controllers: [AppController],
   providers: [

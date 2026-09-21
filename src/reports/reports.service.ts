@@ -6,6 +6,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { CreateReportDto, UpdateReportDto } from './dto';
 import { buildResolutionBody } from './reports.constants';
 import { nowInBuenosAires } from '../common/utils/date.util';
+import { ActivityLogService } from '../common/services/activity-log.service';
 
 @Injectable()
 export class ReportsService {
@@ -15,6 +16,7 @@ export class ReportsService {
     private prisma: PrismaService,
     private conversationsService: ConversationsService,
     private notificationsService: NotificationsService,
+    private readonly activityLog: ActivityLogService,
   ) {}
 
   /**
@@ -101,6 +103,14 @@ export class ReportsService {
     });
 
     this.logger.log(`Reporte creado: ${report.id} por ${reporterId} contra ${dto.reportedId}`);
+
+    await this.activityLog.logFeature({
+      userId: reporterId,
+      entityType: 'Report',
+      entityId: report.id,
+      feature: 'Generó una denuncia',
+      status: 'pending',
+    });
 
     return {
       success: true,

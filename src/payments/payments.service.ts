@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentDto, UpdatePaymentDto, PaymentResponseDto } from './dto';
 import { PaginationQueryDto, PaginatedResponseDto } from '../common/dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ActivityLogService } from '../common/services/activity-log.service';
 import { NotificationPriority, UserRole } from '@prisma/client';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class PaymentsService {
   constructor(
     private prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly activityLog: ActivityLogService,
   ) {}
 
   async create(createPaymentDto: CreatePaymentDto): Promise<PaymentResponseDto> {
@@ -58,6 +60,14 @@ export class PaymentsService {
     } catch (err) {
       this.logger.error(`Notificación payment_pending fallida (no crítico): ${err}`);
     }
+
+    await this.activityLog.logFeature({
+      userId: payment.userId,
+      entityType: 'Payment',
+      entityId: payment.id,
+      feature: 'Pidió cargar crédito',
+      status: 'pending',
+    });
 
     return payment as PaymentResponseDto;
   }
@@ -240,6 +250,14 @@ export class PaymentsService {
       this.logger.error(`Notificación payment_approved fallida (no crítico): ${err}`);
     }
 
+    await this.activityLog.logFeature({
+      userId: payment.userId,
+      entityType: 'Payment',
+      entityId: paymentId,
+      feature: 'Crédito aprobado',
+      status: 'accepted',
+    });
+
     return result as PaymentResponseDto;
   }
 
@@ -295,6 +313,14 @@ export class PaymentsService {
     } catch (err) {
       this.logger.error(`Notificación payment_rejected fallida (no crítico): ${err}`);
     }
+
+    await this.activityLog.logFeature({
+      userId: payment.userId,
+      entityType: 'Payment',
+      entityId: paymentId,
+      feature: 'Crédito rechazado',
+      status: 'rejected',
+    });
 
     return updatedPayment as PaymentResponseDto;
   }
