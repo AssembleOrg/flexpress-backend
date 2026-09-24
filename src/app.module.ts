@@ -31,6 +31,7 @@ import { RequestLoggerInterceptor } from './common/interceptors/request-logger.i
 import { GeolocationService } from './common/services/geolocation.service';
 import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { validateEnv } from './config/env.validation';
       },
     ]),
     PrismaModule,
+    MailModule,
     AuthModule,
     UsersModule,
     TripsModule,

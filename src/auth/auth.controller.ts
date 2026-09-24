@@ -22,6 +22,7 @@ import { UserLoginDto, CreateUserDto } from '../users/dto';
 import { Public } from '../common/decorators/public.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 
 /** Datos del request que se guardan con la sesión, para poder auditarla. */
 const sessionContext = (req: any) => ({
@@ -143,6 +144,30 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Sesión cerrada' })
   async logout(@Body() dto: Partial<RefreshTokenDto>) {
     return this.authService.logout(dto?.refresh_token);
+  }
+
+  @Public()
+  @Post('verify-email')
+  @Throttle({ short: { limit: 10, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Confirmar el email con el token del mail' })
+  @ApiBody({ type: VerifyEmailDto })
+  @ApiResponse({ status: 200, description: 'Email confirmado' })
+  @ApiResponse({ status: 400, description: 'Link inválido, usado o vencido' })
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(dto.token);
+  }
+
+  @Post('resend-verification')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 3, ttl: 600000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reenviar el mail de confirmación al usuario autenticado' })
+  @ApiResponse({ status: 200, description: 'Mail enviado' })
+  @ApiResponse({ status: 400, description: 'Ya confirmado o no se pudo enviar' })
+  resendVerification(@Request() req: any) {
+    return this.authService.resendEmailVerification(req.user.id);
   }
 
   @Public()

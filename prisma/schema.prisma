@@ -27,6 +27,12 @@ model User {
   number                String
   avatar                String?
 
+  // Confirmación de email: no bloquea el uso, solo se pide y se recuerda.
+  // El token se guarda hasheado (sha256), igual que los refresh tokens.
+  emailVerifiedAt            DateTime?
+  emailVerificationTokenHash String?   @unique
+  emailVerificationExpiresAt DateTime?
+
   // Charter-specific fields (origin location for charter users)
   originAddress   String? // Human-readable address (e.g., "St Martin 425, Buenos Aires")
   originLatitude  String? // Charter's fixed starting location

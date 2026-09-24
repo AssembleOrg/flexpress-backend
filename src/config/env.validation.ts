@@ -24,6 +24,7 @@ const FEATURE_GROUPS: Record<string, string[]> = {
     'DO_SPACES_KEY',
     'DO_SPACES_SECRET',
   ],
+  'Emails transaccionales (Brevo)': ['BREVO_API_KEY', 'MAIL_FROM', 'FRONTEND_URL'],
   'Notificaciones push (VAPID)': [
     'VAPID_PUBLIC_KEY',
     'VAPID_PRIVATE_KEY',
