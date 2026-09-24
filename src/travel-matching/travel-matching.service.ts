@@ -33,7 +33,7 @@ import {
   TravelPricingService,
   DEFAULT_WAIT_BLOCK_MINUTES,
 } from './travel-pricing.service';
-import { NotificationPriority, VehicleSize } from '@prisma/client';
+import { NotificationPriority, Prisma, VehicleSize } from '@prisma/client';
 import { ActivityLogService } from '../common/services/activity-log.service';
 
 export interface AvailableCharter {
@@ -915,15 +915,25 @@ export class TravelMatchingService {
   /**
    * Get match details
    */
-  async getMatch(matchId: string) {
+  async getMatch(matchId: string, userId: string, userRole: string) {
+    // Solo las dos partes del match (cliente y charter asignado) o admin/subadmin.
+    // 404 y no 403: no revelar que el match existe.
+    const where: Prisma.TravelMatchWhereInput = { id: matchId };
+    if (userRole !== 'admin' && userRole !== 'subadmin') {
+      where.OR = [{ userId }, { charterId: userId }];
+    }
+    const matchLink = await this.prisma.travelMatch.findFirst({
+      where,
+      select: { id: true, conversationId: true },
+    });
+    if (!matchLink) {
+      throw new NotFoundException('Búsqueda no encontrada');
+    }
+
     // Auto-reparación: si el match no tiene conversationId pero existe una
     // Conversation vinculada por matchId (caso histórico de matches huérfanos),
     // escribir el scalar para que la relación se resuelva correctamente.
-    const matchLink = await this.prisma.travelMatch.findUnique({
-      where: { id: matchId },
-      select: { id: true, conversationId: true },
-    });
-    if (matchLink && !matchLink.conversationId) {
+    if (!matchLink.conversationId) {
       const orphanConversation = await this.prisma.conversation.findUnique({
         where: { matchId },
         select: { id: true },

@@ -59,8 +59,8 @@ export class TravelMatchingController {
   @ApiOperation({ summary: 'Get match details' })
   @ApiResponse({ status: 200, description: 'Match details retrieved' })
   @ApiResponse({ status: 404, description: 'Match not found' })
-  async getMatch(@Param('id') id: string) {
-    return this.matchingService.getMatch(id);
+  async getMatch(@Request() req: any, @Param('id') id: string) {
+    return this.matchingService.getMatch(id, req.user.id, req.user.role);
   }
 
   @Put('matches/:id/select-charter')

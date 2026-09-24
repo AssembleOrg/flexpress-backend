@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { TravelMatchingService } from './travel-matching.service';
 import { getCharterCreditCost } from './credit-cost.util';
 import { PrismaService } from '../prisma/prisma.service';
@@ -183,5 +187,54 @@ describe('getCharterCreditCost', () => {
     [500, 4],
   ])('%s km → %s créditos', (km, esperado) => {
     expect(getCharterCreditCost(km as number | null)).toBe(esperado);
+  });
+});
+
+/**
+ * Acceso al detalle de un match: solo cliente, charter asignado o admin/subadmin.
+ * Antes cualquier usuario logueado podía leer direcciones y contacto de
+ * cualquier viaje con solo conocer el id.
+ */
+describe('TravelMatchingService — getMatch (acceso)', () => {
+  const build = () => {
+    const findFirst = jest.fn().mockResolvedValue({ id: 'm1', conversationId: 'c1' });
+    const prisma = {
+      travelMatch: {
+        findFirst,
+        findUnique: jest.fn().mockResolvedValue({ id: 'm1' }),
+      },
+    } as unknown as PrismaService;
+    const service = new TravelMatchingService(
+      prisma,
+      {} as TravelMatchingGateway,
+      {} as ConversationsService,
+      {} as NotificationsService,
+      {} as TravelPricingService,
+      {} as ActivityLogService,
+    );
+    return { service, findFirst };
+  };
+
+  it('usuario/charter: filtra por ser cliente o charter del match', async () => {
+    const { service, findFirst } = build();
+    await service.getMatch('m1', 'u1', 'user');
+    expect(findFirst.mock.calls[0][0].where).toEqual({
+      id: 'm1',
+      OR: [{ userId: 'u1' }, { charterId: 'u1' }],
+    });
+  });
+
+  it.each(['admin', 'subadmin'])('%s: ve cualquier match', async (role) => {
+    const { service, findFirst } = build();
+    await service.getMatch('m1', 'a1', role);
+    expect(findFirst.mock.calls[0][0].where).toEqual({ id: 'm1' });
+  });
+
+  it('un tercero recibe 404 y no dispara escrituras', async () => {
+    const { service, findFirst } = build();
+    findFirst.mockResolvedValueOnce(null);
+    await expect(service.getMatch('m1', 'otro', 'charter')).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });
