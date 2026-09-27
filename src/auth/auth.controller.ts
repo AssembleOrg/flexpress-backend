@@ -23,6 +23,8 @@ import { Public } from '../common/decorators/public.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 /** Datos del request que se guardan con la sesión, para poder auditarla. */
 const sessionContext = (req: any) => ({
@@ -156,6 +158,29 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'Link inválido, usado o vencido' })
   verifyEmail(@Body() dto: VerifyEmailDto) {
     return this.authService.verifyEmail(dto.token);
+  }
+
+  @Public()
+  @Post('forgot-password')
+  @Throttle({ short: { limit: 3, ttl: 600000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Pedir el mail para restablecer la contraseña' })
+  @ApiBody({ type: ForgotPasswordDto })
+  @ApiResponse({ status: 200, description: 'Siempre igual, exista o no la cuenta' })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto.email);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @Throttle({ short: { limit: 10, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Restablecer la contraseña con el token del mail' })
+  @ApiBody({ type: ResetPasswordDto })
+  @ApiResponse({ status: 200, description: 'Contraseña cambiada y sesiones cerradas' })
+  @ApiResponse({ status: 400, description: 'Link inválido, usado o vencido' })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto.token, dto.password);
   }
 
   @Post('resend-verification')

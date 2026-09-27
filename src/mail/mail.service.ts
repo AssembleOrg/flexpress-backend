@@ -16,6 +16,46 @@ const escapeHtml = (s: string) =>
       ]!,
   );
 
+/** Plantilla común de los mails: header bordó, título, texto, botón y link de respaldo. */
+const layout = ({
+  title,
+  body,
+  cta,
+  link,
+  footer,
+}: {
+  title: string;
+  body: string;
+  cta: string;
+  link: string;
+  footer: string;
+}) => `<!doctype html>
+<html lang="es">
+<body style="margin:0;padding:0;background:#f5f1ec;font-family:Arial,Helvetica,sans-serif;color:#212121">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f1ec;padding:32px 16px">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden">
+        <tr><td style="background:#380116;padding:24px 32px">
+          <span style="font-size:24px;font-weight:bold;color:#ffffff;letter-spacing:0.5px">Flex<span style="color:#DCA621">press</span></span>
+        </td></tr>
+        <tr><td style="padding:32px">
+          <h1 style="margin:0 0 16px;font-size:22px;color:#380116">${title}</h1>
+          <p style="margin:0 0 24px;font-size:16px;line-height:1.5">
+            ${body}
+          </p>
+          <p style="margin:0 0 24px">
+            <a href="${link}" style="display:inline-block;background:#DCA621;color:#380116;font-weight:bold;font-size:16px;text-decoration:none;padding:14px 28px;border-radius:8px">${cta}</a>
+          </p>
+          <p style="margin:0 0 8px;font-size:13px;color:#666666">Si el botón no funciona, copiá este link en tu navegador:</p>
+          <p style="margin:0 0 24px;font-size:13px;word-break:break-all"><a href="${link}" style="color:#380116">${link}</a></p>
+          <p style="margin:0;font-size:13px;color:#666666">${footer}</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
 /**
  * Envío de mails transaccionales con Brevo (API HTTP, sin SMTP).
  *
@@ -80,39 +120,46 @@ export class MailService {
   }
 
   sendEmailVerification(to: { email: string; name: string }, link: string) {
-    const name = escapeHtml(to.name.split(' ')[0] || to.name);
-    const html = `<!doctype html>
-<html lang="es">
-<body style="margin:0;padding:0;background:#f5f1ec;font-family:Arial,Helvetica,sans-serif;color:#212121">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f1ec;padding:32px 16px">
-    <tr><td align="center">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden">
-        <tr><td style="background:#380116;padding:24px 32px">
-          <span style="font-size:24px;font-weight:bold;color:#ffffff;letter-spacing:0.5px">Flex<span style="color:#DCA621">press</span></span>
-        </td></tr>
-        <tr><td style="padding:32px">
-          <h1 style="margin:0 0 16px;font-size:22px;color:#380116">¡Hola ${name}! Confirmá tu email</h1>
-          <p style="margin:0 0 24px;font-size:16px;line-height:1.5">
-            Gracias por crear tu cuenta en Flexpress. Tocá el botón para confirmar que este email es tuyo.
-          </p>
-          <p style="margin:0 0 24px">
-            <a href="${link}" style="display:inline-block;background:#DCA621;color:#380116;font-weight:bold;font-size:16px;text-decoration:none;padding:14px 28px;border-radius:8px">Confirmar mi email</a>
-          </p>
-          <p style="margin:0 0 8px;font-size:13px;color:#666666">Si el botón no funciona, copiá este link en tu navegador:</p>
-          <p style="margin:0 0 24px;font-size:13px;word-break:break-all"><a href="${link}" style="color:#380116">${link}</a></p>
-          <p style="margin:0;font-size:13px;color:#666666">El link vence en 48 horas. Si no creaste una cuenta en Flexpress, ignorá este mensaje.</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
-    const text = `¡Hola ${to.name}!\n\nGracias por crear tu cuenta en Flexpress. Confirmá tu email entrando a este link:\n${link}\n\nEl link vence en 48 horas. Si no creaste una cuenta en Flexpress, ignorá este mensaje.`;
+    const first = to.name.split(' ')[0] || to.name;
     return this.send({
       to,
       subject: 'Confirmá tu email en Flexpress',
-      html,
-      text,
+      html: layout({
+        title: `¡Hola ${escapeHtml(first)}! Confirmá tu email`,
+        body: 'Gracias por crear tu cuenta en Flexpress. Tocá el botón para confirmar que este email es tuyo.',
+        cta: 'Confirmar mi email',
+        link,
+        footer:
+          'El link vence en 48 horas. Si no creaste una cuenta en Flexpress, ignorá este mensaje.',
+      }),
+      text: `¡Hola ${to.name}!
+
+Gracias por crear tu cuenta en Flexpress. Confirmá tu email entrando a este link:
+${link}
+
+El link vence en 48 horas. Si no creaste una cuenta en Flexpress, ignorá este mensaje.`,
+    });
+  }
+
+  sendPasswordReset(to: { email: string; name: string }, link: string) {
+    const first = to.name.split(' ')[0] || to.name;
+    return this.send({
+      to,
+      subject: 'Restablecé tu contraseña de Flexpress',
+      html: layout({
+        title: `Hola ${escapeHtml(first)}, restablecé tu contraseña`,
+        body: 'Recibimos un pedido para cambiar la contraseña de tu cuenta. Tocá el botón para elegir una nueva.',
+        cta: 'Elegir nueva contraseña',
+        link,
+        footer:
+          'El link vence en 1 hora y sirve una sola vez. Si no pediste el cambio, ignorá este mensaje: tu contraseña sigue siendo la misma.',
+      }),
+      text: `Hola ${to.name}:
+
+Recibimos un pedido para cambiar la contraseña de tu cuenta en Flexpress. Elegí una nueva entrando a este link:
+${link}
+
+El link vence en 1 hora y sirve una sola vez. Si no pediste el cambio, ignorá este mensaje.`,
     });
   }
 }

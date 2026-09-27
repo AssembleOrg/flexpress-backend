@@ -20,6 +20,8 @@ import { MailService } from '../mail/mail.service';
 
 /** El link del mail de confirmación vence a las 48 h. */
 const EMAIL_VERIFICATION_TTL_MS = 48 * 60 * 60 * 1000;
+/** El link para restablecer la contraseña vence a la hora. */
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 @Injectable()
@@ -284,5 +286,74 @@ export class AuthService {
       throw new BadRequestException('No pudimos enviar el mail. Probá de nuevo en unos minutos.');
     }
     return { sent: true };
+  }
+
+  /**
+   * Responde igual exista o no la cuenta, y el mail sale en segundo plano para
+   * que ni el contenido ni el tiempo de respuesta revelen qué emails están
+   * registrados. Pedir un link nuevo invalida el anterior.
+   */
+  async forgotPassword(email: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { email, deletedAt: null },
+      select: { id: true, email: true, name: true },
+    });
+
+    if (user) {
+      void this.sendPasswordReset(user).catch((err) =>
+        this.logger.error(`No se pudo generar el reset de contraseña de ${user.id}: ${err.message}`),
+      );
+    }
+    return { sent: true };
+  }
+
+  private async sendPasswordReset(user: { id: string; email: string; name: string }) {
+    const token = randomBytes(32).toString('base64url');
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetTokenHash: hashToken(token),
+        passwordResetExpiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
+      },
+    });
+    const link = `${this.mail.frontendUrl}/restablecer-contrasena?token=${encodeURIComponent(token)}`;
+    return this.mail.sendPasswordReset({ email: user.email, name: user.name }, link);
+  }
+
+  /**
+   * Cambia la contraseña y cierra todas las sesiones: si alguien más la conocía,
+   * pierde el acceso. Quien recibió el mail probó que el email es suyo, así que
+   * también queda confirmado.
+   */
+  async resetPassword(token: string, password: string) {
+    const tokenHash = hashToken(token);
+    const user = await this.prisma.user.findUnique({
+      where: { passwordResetTokenHash: tokenHash },
+      select: { id: true, passwordResetExpiresAt: true, deletedAt: true, emailVerifiedAt: true },
+    });
+
+    if (!user || user.deletedAt) {
+      throw new BadRequestException('El link no es válido o ya se usó. Pedí uno nuevo.');
+    }
+    if (!user.passwordResetExpiresAt || user.passwordResetExpiresAt < new Date()) {
+      throw new BadRequestException('El link venció. Pedí uno nuevo.');
+    }
+
+    // Reclamo atómico: si dos requests usan el mismo link a la vez, solo uno gana.
+    const { count } = await this.prisma.user.updateMany({
+      where: { id: user.id, passwordResetTokenHash: tokenHash },
+      data: {
+        password: await this.hashPassword(password),
+        passwordResetTokenHash: null,
+        passwordResetExpiresAt: null,
+        emailVerifiedAt: user.emailVerifiedAt ?? new Date(),
+      },
+    });
+    if (count === 0) {
+      throw new BadRequestException('El link no es válido o ya se usó. Pedí uno nuevo.');
+    }
+
+    await this.refreshTokens.revokeAllForUser(user.id);
+    return { reset: true };
   }
 }

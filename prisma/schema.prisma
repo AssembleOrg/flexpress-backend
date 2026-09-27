@@ -33,6 +33,10 @@ model User {
   emailVerificationTokenHash String?   @unique
   emailVerificationExpiresAt DateTime?
 
+  // Recuperación de contraseña: mismo esquema de token hasheado, vence en 1 h.
+  passwordResetTokenHash String?   @unique
+  passwordResetExpiresAt DateTime?
+
   // Charter-specific fields (origin location for charter users)
   originAddress   String? // Human-readable address (e.g., "St Martin 425, Buenos Aires")
   originLatitude  String? // Charter's fixed starting location
