@@ -1,6 +1,6 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "deploy": {
-    "startCommand": "pnpm run start:prod"
+    "startCommand": "sh -c './node_modules/.bin/prisma migrate deploy && exec node dist/main'"
   }
 }
