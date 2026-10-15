@@ -8,6 +8,8 @@ const parseOrigins = (raw?: string): string[] =>
     .filter(Boolean);
 
 const DEFAULT_ORIGINS = [
+  'https://flex-press.com.ar',
+  'https://www.flex-press.com.ar',
   'https://flexpress-front.vercel.app',
   'https://flexpress-front-production-2f47.up.railway.app',
   'http://localhost:3000',

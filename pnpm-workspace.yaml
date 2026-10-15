@@ -3,5 +3,4 @@ onlyBuiltDependencies:
   - '@prisma/client'
   - '@prisma/engines'
   - '@scarf/scarf'
-  - '@swc/core'
   - prisma

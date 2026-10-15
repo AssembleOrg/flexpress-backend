@@ -9,7 +9,6 @@ import {
   Query,
   UseGuards,
   Request,
-  BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
 import {

@@ -1,6 +1,5 @@
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { VerificationStatus } from '../../common/enums';
 
 export class VerifyCharterDto {
   @ApiProperty({

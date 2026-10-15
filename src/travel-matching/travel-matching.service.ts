@@ -10,8 +10,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateMatchDto,
   SelectCharterDto,
-  ToggleAvailabilityDto,
-  UpdateCharterOriginDto,
 } from './dto';
 import { RespondToMatchDto } from './dto/respond-to-match.dto';
 import { getCharterCreditCost } from './credit-cost.util';
@@ -29,10 +27,7 @@ import {
 import { TravelMatchingGateway } from './travel-matching.gateway';
 import { ConversationsService } from '../conversations/conversations.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import {
-  TravelPricingService,
-  DEFAULT_WAIT_BLOCK_MINUTES,
-} from './travel-pricing.service';
+import { TravelPricingService } from './travel-pricing.service';
 import { NotificationPriority, Prisma, VehicleSize } from '@prisma/client';
 import { ActivityLogService } from '../common/services/activity-log.service';
 
