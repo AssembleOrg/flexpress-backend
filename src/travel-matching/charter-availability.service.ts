@@ -1,12 +1,24 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { NotificationPriority } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ToggleAvailabilityDto, UpdateCharterOriginDto } from './dto';
 import { nowInBuenosAires } from '../common/utils/date.util';
 import { ActivityLogService } from '../common/services/activity-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
+
+const HOUR_MS = 60 * 60 * 1000;
+/** Sin abrir la app ni tocar el toggle durante este tiempo → "¿Seguís disponible?". */
+const STALE_WARNING_AFTER_MS = 24 * HOUR_MS;
+/** Margen entre el aviso y el apagado, para que pueda responder abriendo la app. */
+const STALE_GRACE_MS = 2 * HOUR_MS;
+export const STALE_WARNING_TYPE = 'availability_stale_warning';
+export const AUTO_OFF_TYPE = 'availability_auto_off';
 
 /**
  * Configuración propia del charter: si está disponible, con qué vehículo y qué
@@ -18,9 +30,12 @@ import { ActivityLogService } from '../common/services/activity-log.service';
  */
 @Injectable()
 export class CharterAvailabilityService {
+  private readonly logger = new Logger(CharterAvailabilityService.name);
+
   constructor(
     private prisma: PrismaService,
     private readonly activityLog: ActivityLogService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -327,5 +342,140 @@ export class CharterAvailabilityService {
         originLongitude: updated.originLongitude,
       },
     };
+  }
+
+  /**
+   * "Disponible" no vence solo: un charter que dejó el celular en un cajón
+   * seguía apareciendo en la búsqueda y el cliente esperaba un match que nunca
+   * iba a responderse. Cada hora:
+   *
+   *  1. Inactivo 24h (sin abrir la app ni tocar el toggle) → aviso "¿Seguís
+   *     disponible?" (push + campana). Abrir la app ya cuenta como respuesta.
+   *  2. Si 2h después del aviso sigue sin actividad → se lo pasa a No disponible
+   *     y se le avisa.
+   *
+   * Actividad = `lastLoginAt` (se actualiza en cada refresh, ~cada 15 min con la
+   * app abierta) o `lastToggledAt`. El aviso mismo es el estado: no hay columna
+   * nueva, se busca la notificación de aviso posterior a la última actividad.
+   * Los que están en viaje (match aceptado o trip activo) no se tocan.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async expireStaleAvailability(): Promise<void> {
+    const now = Date.now();
+    const warnCutoff = new Date(now - STALE_WARNING_AFTER_MS);
+
+    const candidates = await this.prisma.charterAvailability.findMany({
+      where: {
+        isAvailable: true,
+        lastToggledAt: { lt: warnCutoff },
+        charter: {
+          OR: [{ lastLoginAt: null }, { lastLoginAt: { lt: warnCutoff } }],
+        },
+      },
+      select: {
+        id: true,
+        charterId: true,
+        lastToggledAt: true,
+        charter: { select: { lastLoginAt: true } },
+      },
+    });
+    if (candidates.length === 0) return;
+
+    const charterIds = candidates.map((c) => c.charterId);
+    // Misma regla que `isOnTrip` en la búsqueda (travel-matching.service).
+    const [acceptedMatches, activeTrips, warnings] = await Promise.all([
+      this.prisma.travelMatch.findMany({
+        where: { charterId: { in: charterIds }, status: 'accepted', deletedAt: null },
+        select: { charterId: true },
+      }),
+      this.prisma.trip.findMany({
+        where: {
+          charterId: { in: charterIds },
+          status: { in: ['pending', 'charter_completed'] },
+          deletedAt: null,
+        },
+        select: { charterId: true },
+      }),
+      this.prisma.notification.findMany({
+        where: { userId: { in: charterIds }, type: STALE_WARNING_TYPE },
+        orderBy: { createdAt: 'desc' },
+        distinct: ['userId'],
+        select: { userId: true, createdAt: true },
+      }),
+    ]);
+    const busy = new Set<string>();
+    for (const m of acceptedMatches) if (m.charterId) busy.add(m.charterId);
+    for (const t of activeTrips) busy.add(t.charterId);
+    const lastWarning = new Map(warnings.map((w) => [w.userId, w.createdAt]));
+
+    let warned = 0;
+    let turnedOff = 0;
+    for (const c of candidates) {
+      if (busy.has(c.charterId)) continue;
+      try {
+        const lastActivity = Math.max(
+          c.lastToggledAt.getTime(),
+          c.charter.lastLoginAt?.getTime() ?? 0,
+        );
+        const warning = lastWarning.get(c.charterId);
+
+        if (!warning || warning.getTime() <= lastActivity) {
+          await this.notificationsService.createOrUpdate({
+            userId: c.charterId,
+            type: STALE_WARNING_TYPE,
+            title: '¿Seguís disponible?',
+            body: 'Hace un día que no abrís Flexpress. Entrá para seguir recibiendo pedidos o te pasamos a No disponible.',
+            priority: NotificationPriority.HIGH,
+            data: { actionUrl: '/driver/dashboard' },
+          });
+          warned++;
+          continue;
+        }
+
+        if (now - warning.getTime() < STALE_GRACE_MS) continue;
+
+        // Condicional: si entre la lectura y acá abrió la app o tocó el toggle,
+        // no matchea y no se apaga.
+        const { count } = await this.prisma.charterAvailability.updateMany({
+          where: {
+            id: c.id,
+            isAvailable: true,
+            lastToggledAt: c.lastToggledAt,
+            charter: {
+              OR: [{ lastLoginAt: null }, { lastLoginAt: { lt: warning } }],
+            },
+          },
+          data: { isAvailable: false },
+        });
+        if (count === 0) continue;
+
+        await this.activityLog.logFeature({
+          userId: c.charterId,
+          entityType: 'CharterAvailability',
+          entityId: c.id,
+          feature: 'Disponibilidad apagada por inactividad',
+          status: 'unavailable',
+        });
+        await this.notificationsService.createOrUpdate({
+          userId: c.charterId,
+          type: AUTO_OFF_TYPE,
+          title: 'Te pasamos a No disponible',
+          body: 'No tuvimos noticias tuyas en más de un día. Cuando vuelvas a estar listo, activate desde tu panel.',
+          priority: NotificationPriority.HIGH,
+          data: { actionUrl: '/driver/dashboard' },
+        });
+        turnedOff++;
+      } catch (err) {
+        this.logger.warn(
+          `Inactividad de ${c.charterId} fallida (se reintenta en 1h): ${err}`,
+        );
+      }
+    }
+
+    if (warned || turnedOff) {
+      this.logger.log(
+        `Disponibilidad por inactividad: ${warned} avisados, ${turnedOff} apagados`,
+      );
+    }
   }
 }

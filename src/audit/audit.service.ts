@@ -18,6 +18,7 @@ export interface AuditFeedItem {
   id: string;
   createdAt: Date;
   userName: string;
+  userRole: string | null;
   feature: string | null;
   status: string | null;
 }
@@ -89,18 +90,22 @@ export class AuditService {
     const users = userIds.length
       ? await this.prisma.user.findMany({
           where: { id: { in: userIds } },
-          select: { id: true, name: true },
+          select: { id: true, name: true, role: true },
         })
       : [];
-    const nameById = new Map(users.map((u) => [u.id, u.name]));
+    const userById = new Map(users.map((u) => [u.id, u]));
 
-    const items: AuditFeedItem[] = logs.map((l) => ({
-      id: l.id,
-      createdAt: l.createdAt,
-      userName: (l.userId && nameById.get(l.userId)) || 'Usuario eliminado',
-      feature: l.feature,
-      status: l.status,
-    }));
+    const items: AuditFeedItem[] = logs.map((l) => {
+      const u = l.userId ? userById.get(l.userId) : undefined;
+      return {
+        id: l.id,
+        createdAt: l.createdAt,
+        userName: u?.name || 'Usuario eliminado',
+        userRole: u?.role ?? null,
+        feature: l.feature,
+        status: l.status,
+      };
+    });
 
     return { items, total, page, limit };
   }

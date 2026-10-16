@@ -222,10 +222,23 @@ export class AuthService {
     };
   }
 
-  /** Cierra la sesión de este dispositivo. El access vigente muere solo al vencer. */
-  async logout(token?: string) {
+  /**
+   * Cierra la sesión de este dispositivo. El access vigente muere solo al vencer.
+   *
+   * Con `pushEndpoint` también desvincula el push de este dispositivo: la
+   * suscripción es una por navegador y queda a nombre del último que la
+   * sincronizó, así que sin esto el usuario que se fue seguía recibiendo sus
+   * notificaciones ahí. Se resuelve por el refresh token (no por el access) para
+   * que funcione aunque el access ya haya vencido. Best-effort: nunca bloquea el logout.
+   */
+  async logout(token?: string, pushEndpoint?: string) {
     if (token) {
-      await this.refreshTokens.revoke(token);
+      const userId = await this.refreshTokens.revoke(token);
+      if (userId && pushEndpoint) {
+        await this.prisma.pushSubscription
+          .deleteMany({ where: { userId, endpoint: pushEndpoint } })
+          .catch(() => undefined);
+      }
     }
     return { success: true };
   }

@@ -21,7 +21,7 @@ import { AuthService } from './auth.service';
 import { UserLoginDto, CreateUserDto } from '../users/dto';
 import { Public } from '../common/decorators/public.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { LogoutDto, RefreshTokenDto } from './dto/refresh-token.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -142,10 +142,10 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cerrar sesión en este dispositivo' })
-  @ApiBody({ type: RefreshTokenDto, required: false })
+  @ApiBody({ type: LogoutDto, required: false })
   @ApiResponse({ status: 200, description: 'Sesión cerrada' })
-  async logout(@Body() dto: Partial<RefreshTokenDto>) {
-    return this.authService.logout(dto?.refresh_token);
+  async logout(@Body() dto: LogoutDto) {
+    return this.authService.logout(dto?.refresh_token, dto?.push_endpoint);
   }
 
   @Public()

@@ -135,11 +135,18 @@ export class RefreshTokenService {
   }
 
   /** Logout: corta solo la sesión de este dispositivo. */
-  async revoke(token: string): Promise<void> {
+  /** Devuelve el dueño del token (aunque ya estuviera revocado), o null si no existe. */
+  async revoke(token: string): Promise<string | null> {
+    const tokenHash = this.hash(token);
     await this.prisma.refreshToken.updateMany({
-      where: { tokenHash: this.hash(token), revokedAt: null },
+      where: { tokenHash, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    const stored = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      select: { userId: true },
+    });
+    return stored?.userId ?? null;
   }
 
   /** Baneo, cambio de contraseña o sospecha de robo. */
